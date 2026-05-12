@@ -3,6 +3,9 @@ export interface ObserveRootOptions {
   onMount: (root: Element) => void;
   onMutation?: (root: Element, mutations: MutationRecord[]) => void;
   pollMs?: number;
+  /** Defaults to `{ childList: true, subtree: true }`. Override to also
+   *  watch attribute mutations etc. */
+  observerInit?: MutationObserverInit;
 }
 
 export interface ObserveRootHandle {
@@ -29,7 +32,7 @@ export function observeRoot(opts: ObserveRootOptions): ObserveRootHandle {
     opts.onMount(root);
     if (opts.onMutation) {
       observer = new MutationObserver((mutations) => opts.onMutation!(root, mutations));
-      observer.observe(root, { childList: true, subtree: true });
+      observer.observe(root, opts.observerInit ?? { childList: true, subtree: true });
     }
   }
 

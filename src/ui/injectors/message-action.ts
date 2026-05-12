@@ -97,8 +97,26 @@ export function createMessageActionInjector(
   const observation = observeRoot({
     findRoot: () => document.querySelector('[data-component="MessageList"]'),
     onMount: (root) => scanAndInject(root),
+    // Watch attribute mutations on `data-part` in addition to childList:
+    // Lumiverse stages the real message in the DB before streaming, so the
+    // same React element flips `data-part="streaming"` -> `"character"` in
+    // place when streaming ends. No childList mutation fires for that
+    // transition; we'd otherwise miss the latest message until chat reopen.
+    observerInit: {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-part"],
+    },
     onMutation: (_root, mutations) => {
       for (const m of mutations) {
+        if (m.type === "attributes") {
+          const target = m.target;
+          if (!(target instanceof HTMLElement)) continue;
+          const messageEl = target.closest("[data-message-id]");
+          if (messageEl instanceof HTMLElement) injectInto(messageEl);
+          continue;
+        }
         for (const node of Array.from(m.addedNodes)) {
           if (node instanceof Element) scanAndInject(node);
         }

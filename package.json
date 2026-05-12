@@ -7,6 +7,7 @@
     "build:backend": "bun build src/backend/index.ts --outfile dist/backend.js --target bun",
     "build:frontend": "bun run gen:assets && bun build src/ui/index.ts --outfile dist/frontend.js --target browser",
     "build": "bun run typecheck && bun run build:backend && bun run build:frontend",
+    "deploy": "powershell.exe -File local/scripts/deploy.ps1",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --dir local_tests",
     "test:e2e": "playwright test --config tests/playwright/playwright.config.ts",

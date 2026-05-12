@@ -5836,7 +5836,7 @@ function observeRoot(opts) {
     opts.onMount(root);
     if (opts.onMutation) {
       observer = new MutationObserver((mutations) => opts.onMutation(root, mutations));
-      observer.observe(root, { childList: true, subtree: true });
+      observer.observe(root, opts.observerInit ?? { childList: true, subtree: true });
     }
   }
   function tryAttach() {
@@ -5932,8 +5932,23 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
   const observation = observeRoot({
     findRoot: () => document.querySelector('[data-component="MessageList"]'),
     onMount: (root) => scanAndInject(root),
+    observerInit: {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-part"]
+    },
     onMutation: (_root, mutations) => {
       for (const m of mutations) {
+        if (m.type === "attributes") {
+          const target = m.target;
+          if (!(target instanceof HTMLElement))
+            continue;
+          const messageEl = target.closest("[data-message-id]");
+          if (messageEl instanceof HTMLElement)
+            injectInto(messageEl);
+          continue;
+        }
         for (const node of Array.from(m.addedNodes)) {
           if (node instanceof Element)
             scanAndInject(node);

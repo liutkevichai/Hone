@@ -10,7 +10,9 @@ src/ui/generated/
 # Local scratch / tests
 tmp/
 local_tests/
+local/
 vendor/
+temp/
 
 # Playwright run artifacts (results, auth state, traces)
 tests/playwright/test-results/
