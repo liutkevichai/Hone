@@ -68,7 +68,7 @@ Grant them in Lumiverse's Extensions tab, then try again.`;
 }
 // spindle.json
 var spindle_default = {
-  version: "0.2.1",
+  version: "0.2.2",
   name: "Hone",
   identifier: "hone",
   author: "Mousepad",

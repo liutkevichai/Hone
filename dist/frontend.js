@@ -2546,7 +2546,7 @@ function createSettingsPage(_ctx, sendToBackend) {
 }
 // spindle.json
 var spindle_default = {
-  version: "0.2.1",
+  version: "0.2.2",
   name: "Hone",
   identifier: "hone",
   author: "Mousepad",
@@ -5877,6 +5877,7 @@ function observeRoot(opts) {
 }
 
 // src/ui/injectors/message-action.ts
+var HOLD_TO_RERUN_MS = 600;
 var INJECTOR_STYLES = `
 button[data-hone-btn] {
   width: 26px;
@@ -5903,6 +5904,13 @@ button[data-hone-btn]:disabled {
 }
 button[data-hone-btn].hone-msg-btn--refined {
   color: var(--lumiverse-primary, #4a90e2);
+}
+/* Press-and-hold charge feedback on refined buttons: grows toward the
+ * hold threshold, then snaps back when the re-hone fires or the press
+ * is released early. */
+button[data-hone-btn].hone-msg-btn--holding {
+  transform: scale(1.25);
+  transition: transform ${HOLD_TO_RERUN_MS}ms ease-in;
 }
 button[data-hone-btn] .hone-icon {
   display: none;
@@ -5962,16 +5970,9 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
     }
     const messages = root.querySelectorAll("[data-message-id]");
     messages.forEach((el) => injectInto(el));
-    const pillSelector = '[data-component="BubbleActions"]';
-    const pills = [];
-    if (root instanceof HTMLElement && root.matches(pillSelector)) {
-      pills.push(root);
-    }
-    pills.push(...Array.from(root.querySelectorAll(pillSelector)));
-    for (const pill of pills) {
-      const msgEl = pill.closest("[data-message-id]");
-      if (msgEl instanceof HTMLElement)
-        injectInto(msgEl);
+    const container = root.closest("[data-message-id]");
+    if (container instanceof HTMLElement && container !== root) {
+      injectInto(container);
     }
   }
   function findActionBar(messageEl) {
@@ -6014,9 +6015,45 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
     btn.appendChild(refineIcon);
     btn.appendChild(undoIcon);
     btn.appendChild(spinnerIcon);
+    let holdTimer = null;
+    let holdFired = false;
+    const cancelHold = () => {
+      if (holdTimer !== null) {
+        window.clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+      btn.classList.remove("hone-msg-btn--holding");
+    };
+    btn.addEventListener("pointerdown", (e) => {
+      holdFired = false;
+      if (e.button !== 0)
+        return;
+      if (!isReady())
+        return;
+      if (!refinedIds.has(messageId) || busyIds.has(messageId))
+        return;
+      btn.classList.add("hone-msg-btn--holding");
+      holdTimer = window.setTimeout(() => {
+        holdTimer = null;
+        holdFired = true;
+        btn.classList.remove("hone-msg-btn--holding");
+        handleRerun(messageId);
+      }, HOLD_TO_RERUN_MS);
+    });
+    btn.addEventListener("pointerup", cancelHold);
+    btn.addEventListener("pointerleave", cancelHold);
+    btn.addEventListener("pointercancel", cancelHold);
+    btn.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (holdFired) {
+        holdFired = false;
+        return;
+      }
       handleClick(messageId);
     });
     try {
@@ -6033,7 +6070,7 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
     const refined = refinedIds.has(messageId);
     const busy = busyIds.has(messageId);
     const disabled = !isReady();
-    const title = busy ? "Honing... (click to cancel)" : refined ? "Undo Hone refinement" : "Hone this message";
+    const title = busy ? "Honing... (click to cancel)" : refined ? "Undo Hone refinement (hold to re-hone from current text)" : "Hone this message";
     buttonsForMessage(messageId).forEach((btn) => {
       btn.disabled = disabled;
       btn.title = title;
@@ -6069,6 +6106,18 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
     } else {
       sendToBackend({ type: "refine", chatId, messageId });
     }
+  }
+  function handleRerun(messageId) {
+    if (!isReady())
+      return;
+    const chatId = getActiveChatId();
+    if (!chatId)
+      return;
+    if (busyIds.has(messageId))
+      return;
+    busyIds.add(messageId);
+    updateButtonState(messageId);
+    sendToBackend({ type: "refine", chatId, messageId });
   }
   return {
     setRefinedMessages(ids) {

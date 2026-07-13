@@ -19,6 +19,10 @@ import type { FrontendToBackend } from "../../types";
 import { REFINE_ICON_SVG, UNDO_ICON_SVG, SPINNER_ICON_SVG } from "../icons";
 import { observeRoot } from "./observe-root";
 
+/** Press-and-hold duration on a refined button before a re-hone fires
+ *  (lock the current refinement as the new base and refine again). */
+const HOLD_TO_RERUN_MS = 600;
+
 /* Matches the native `.pill button` shape (26×26, transparent, 6px
  * radius) so the Hone button sits flush next to Copy/Edit/Fork. Same
  * display-toggle icon pattern as input-area-injector.ts. */
@@ -48,6 +52,13 @@ button[data-hone-btn]:disabled {
 }
 button[data-hone-btn].hone-msg-btn--refined {
   color: var(--lumiverse-primary, #4a90e2);
+}
+/* Press-and-hold charge feedback on refined buttons: grows toward the
+ * hold threshold, then snaps back when the re-hone fires or the press
+ * is released early. */
+button[data-hone-btn].hone-msg-btn--holding {
+  transform: scale(1.25);
+  transition: transform ${HOLD_TO_RERUN_MS}ms ease-in;
 }
 button[data-hone-btn] .hone-icon {
   display: none;
@@ -125,27 +136,24 @@ export function createMessageActionInjector(
   });
 
   function scanAndInject(root: Element) {
-    // Case 1: whole message wrapper added (initial mount, streaming,
-    // chat switch).
+    // Downward: message wrappers at or below root (initial mount,
+    // streaming, chat switch, whole-row remount under virtualization).
     if (root instanceof HTMLElement && root.hasAttribute("data-message-id")) {
       injectInto(root);
     }
     const messages = root.querySelectorAll("[data-message-id]");
     messages.forEach((el) => injectInto(el as HTMLElement));
 
-    // Case 2: only the BubbleActions pill re-mounted inside an
-    // existing message (e.g. user left edit mode, React swaps the
-    // bubble contents but keeps the [data-message-id] wrapper). The
-    // wrapper isn't in addedNodes so Case 1 misses it.
-    const pillSelector = '[data-component="BubbleActions"]';
-    const pills: Element[] = [];
-    if (root instanceof HTMLElement && root.matches(pillSelector)) {
-      pills.push(root);
-    }
-    pills.push(...Array.from(root.querySelectorAll(pillSelector)));
-    for (const pill of pills) {
-      const msgEl = pill.closest("[data-message-id]");
-      if (msgEl instanceof HTMLElement) injectInto(msgEl);
+    // Upward: root was added INSIDE an existing message wrapper — React
+    // remounted part of the bubble (e.g. the action bar coming back when
+    // the user leaves edit mode) without the wrapper appearing in
+    // addedNodes. Walking up instead of matching a specific action-bar
+    // component covers every chat style (bubble's BubbleActions pill,
+    // minimal's MessageActions row, and future layouts); injectInto is
+    // idempotent so over-firing is harmless.
+    const container = root.closest("[data-message-id]");
+    if (container instanceof HTMLElement && container !== root) {
+      injectInto(container);
     }
   }
 
@@ -198,9 +206,53 @@ export function createMessageActionInjector(
     btn.appendChild(undoIcon);
     btn.appendChild(spinnerIcon);
 
+    // Press-and-hold on a refined button re-runs Hone on the current
+    // (already-refined) text instead of undoing: the backend's saveUndo
+    // overwrites the entry, so the held-down version becomes the new
+    // undo base ("lock"). Plain click keeps its undo meaning.
+    let holdTimer: number | null = null;
+    let holdFired = false;
+    const cancelHold = () => {
+      if (holdTimer !== null) {
+        window.clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+      btn.classList.remove("hone-msg-btn--holding");
+    };
+    btn.addEventListener("pointerdown", (e) => {
+      // A completed hold whose pointer slid off the button never gets a
+      // click; don't let the stale flag swallow the next press's click.
+      holdFired = false;
+      if (e.button !== 0) return;
+      if (!isReady()) return;
+      if (!refinedIds.has(messageId) || busyIds.has(messageId)) return;
+      btn.classList.add("hone-msg-btn--holding");
+      holdTimer = window.setTimeout(() => {
+        holdTimer = null;
+        holdFired = true;
+        btn.classList.remove("hone-msg-btn--holding");
+        handleRerun(messageId);
+      }, HOLD_TO_RERUN_MS);
+    });
+    btn.addEventListener("pointerup", cancelHold);
+    btn.addEventListener("pointerleave", cancelHold);
+    btn.addEventListener("pointercancel", cancelHold);
+    // Touch long-press synthesizes a contextmenu event; the hold
+    // gesture owns that press, so keep the host's menu out of it.
+    btn.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (holdFired) {
+        // The pointerup that ends a completed hold still dispatches a
+        // click; swallow it so the re-hone isn't followed by an undo.
+        holdFired = false;
+        return;
+      }
       handleClick(messageId);
     });
     try {
@@ -225,7 +277,7 @@ export function createMessageActionInjector(
     const title = busy
       ? "Honing... (click to cancel)"
       : refined
-      ? "Undo Hone refinement"
+      ? "Undo Hone refinement (hold to re-hone from current text)"
       : "Hone this message";
     buttonsForMessage(messageId).forEach((btn) => {
       btn.disabled = disabled;
@@ -264,6 +316,21 @@ export function createMessageActionInjector(
     } else {
       sendToBackend({ type: "refine", chatId, messageId });
     }
+  }
+
+  /** Hold-to-rerun on an already-refined message: refine the current
+   *  content as the new base. The undo entry is overwritten backend-side,
+   *  so a later click-undo returns to the version that was held, not the
+   *  pristine original. */
+  function handleRerun(messageId: string) {
+    if (!isReady()) return;
+    const chatId = getActiveChatId();
+    if (!chatId) return;
+    if (busyIds.has(messageId)) return;
+
+    busyIds.add(messageId);
+    updateButtonState(messageId);
+    sendToBackend({ type: "refine", chatId, messageId });
   }
 
   return {

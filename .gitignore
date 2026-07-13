@@ -26,3 +26,6 @@ tests/playwright/playwright-report/
 .env
 .env.*
 !.env.example
+
+# Playwright MCP browser artifacts
+.playwright-mcp/
