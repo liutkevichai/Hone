@@ -1,7 +1,7 @@
 import type { HonePreset, Pipeline, StageRecord, GenerateRequest } from "../types";
 import type { HoneSettings } from "../types";
 import type { ResolvedModel } from "./model-resolver";
-import { resolveProfile, injectReasoningParams } from "./model-resolver";
+import { resolveProfile, buildReasoningOverride } from "./model-resolver";
 import { assembleStage, type AssembleContext } from "../assemble";
 import { generate } from "../generation";
 import { makeAbortError } from "../generation/cancel";
@@ -72,7 +72,8 @@ async function runPipeline(
     const req: GenerateRequest = {
       messages: assembled.messages,
       connectionProfileId: stageModel.connectionProfileId,
-      parameters: injectReasoningParams(stageModel.parameters, stageModel.reasoning),
+      parameters: stageModel.parameters,
+      reasoning: buildReasoningOverride(stageModel.reasoning),
     };
 
     hlog.debug(

@@ -68,7 +68,7 @@ Grant them in Lumiverse's Extensions tab, then try again.`;
 }
 // spindle.json
 var spindle_default = {
-  version: "0.2.2",
+  version: "0.2.3",
   name: "Hone",
   identifier: "hone",
   author: "Mousepad",
@@ -85,7 +85,7 @@ var spindle_default = {
   ],
   entry_backend: "dist/backend.js",
   entry_frontend: "dist/frontend.js",
-  minimum_lumiverse_version: "0.9.2"
+  minimum_lumiverse_version: "1.1.0"
 };
 
 // src/constants.ts
@@ -5156,7 +5156,7 @@ var DEFAULT_SAMPLERS = {
 };
 var DEFAULT_REASONING = {
   stripCoTTags: true,
-  requestReasoning: false,
+  mode: "inherit",
   reasoningEffort: "auto"
 };
 function getDefaultProfile() {
@@ -5183,9 +5183,17 @@ function normalizeReasoning(raw) {
   if (!raw || typeof raw !== "object")
     return { ...DEFAULT_REASONING };
   const r = raw;
+  let mode;
+  if (r.mode === "inherit" || r.mode === "off" || r.mode === "custom") {
+    mode = r.mode;
+  } else if (typeof r.requestReasoning === "boolean") {
+    mode = r.requestReasoning ? "custom" : "inherit";
+  } else {
+    mode = DEFAULT_REASONING.mode;
+  }
   return {
     stripCoTTags: typeof r.stripCoTTags === "boolean" ? r.stripCoTTags : DEFAULT_REASONING.stripCoTTags,
-    requestReasoning: typeof r.requestReasoning === "boolean" ? r.requestReasoning : DEFAULT_REASONING.requestReasoning,
+    mode,
     reasoningEffort: r.reasoningEffort ?? DEFAULT_REASONING.reasoningEffort
   };
 }
@@ -5356,6 +5364,7 @@ function buildSpindleRequest(req, resolved, userId, signal) {
     connection_id: resolved.id,
     model: resolved.model,
     parameters,
+    reasoning: req.reasoning,
     userId,
     signal
   };
@@ -5491,7 +5500,7 @@ async function generate(req, userId, options = {}) {
     return { content: "", success: false, error: prepared.error };
   }
   const { resolved, parametersForLog } = prepared.data;
-  debug(userId, `Generation: connection=${resolved.id}${req.connectionProfileId ? "" : " (default)"}, model=${resolved.model || "none"}, msgs=${req.messages.length}, streaming=${settings.streamGenerations}, params=${JSON.stringify(parametersForLog)}`);
+  debug(userId, `Generation: connection=${resolved.id}${req.connectionProfileId ? "" : " (default)"}, model=${resolved.model || "none"}, msgs=${req.messages.length}, streaming=${settings.streamGenerations}, reasoning=${req.reasoning ? JSON.stringify(req.reasoning) : "(inherit)"}, params=${JSON.stringify(parametersForLog)}`);
   if (isFullPayloadEnabled(userId)) {
     debug(userId, `Generation request messages: ${safeStringify(req.messages)}`);
   }
@@ -5532,17 +5541,15 @@ async function resolveModel(settings, userId) {
     await updateSettings(userId, { activeModelProfileId: DEFAULT_PROFILE_ID });
   });
 }
-function injectReasoningParams(base, reasoning) {
-  if (!reasoning.requestReasoning)
-    return base;
-  const params = { ...base ?? {} };
-  if (!params.thinking) {
-    params.thinking = { type: "adaptive" };
-    const effort = reasoning.reasoningEffort;
-    const valid = new Set(["low", "medium", "high", "max"]);
-    params.output_config = { effort: valid.has(effort) ? effort : "high" };
+function buildReasoningOverride(reasoning) {
+  switch (reasoning.mode) {
+    case "off":
+      return { source: "off" };
+    case "custom":
+      return { source: "custom", apiReasoning: true, effort: reasoning.reasoningEffort };
+    default:
+      return;
   }
-  return params;
 }
 
 // src/text/extract.ts
@@ -5662,7 +5669,8 @@ async function runPipeline(pipeline, input, initialLatest, proposals, emitStages
     const req = {
       messages: assembled.messages,
       connectionProfileId: stageModel.connectionProfileId,
-      parameters: injectReasoningParams(stageModel.parameters, stageModel.reasoning)
+      parameters: stageModel.parameters,
+      reasoning: buildReasoningOverride(stageModel.reasoning)
     };
     debug(input.userId, `runPipeline stage ${i + 1}/${pipeline.stages.length} "${stage.name}" msgs=${assembled.messages.length} merges=${assembled.merges} emit=${emitStages} stageProfile="${stage.modelProfileId || "(inherit)"}"`);
     const result = await generate(req, input.userId, { signal: input.signal });

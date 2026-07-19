@@ -2546,7 +2546,7 @@ function createSettingsPage(_ctx, sendToBackend) {
 }
 // spindle.json
 var spindle_default = {
-  version: "0.2.2",
+  version: "0.2.3",
   name: "Hone",
   identifier: "hone",
   author: "Mousepad",
@@ -2563,7 +2563,7 @@ var spindle_default = {
   ],
   entry_backend: "dist/backend.js",
   entry_frontend: "dist/frontend.js",
-  minimum_lumiverse_version: "0.9.2"
+  minimum_lumiverse_version: "1.1.0"
 };
 
 // src/constants.ts
@@ -2724,27 +2724,31 @@ function createModelsPanel(ctx, sendToBackend, root) {
         }));
       }
       root.appendChild(samplerSection);
-      const reasoningSection = makeSection("Reasoning Detection");
+      const reasoningSection = makeSection("Reasoning");
       reasoningSection.appendChild(makeDescription("Configure how the refinement LLM handles its own reasoning output."));
       reasoningSection.appendChild(makeToggleRow("Strip Reasoning Tags", "Remove <think>, <thinking>, and <reasoning> tags from the LLM response before extracting refined text.", () => mp.reasoning.stripCoTTags, (val) => {
         mp.reasoning.stripCoTTags = val;
         saveActiveProfile();
       }));
-      reasoningSection.appendChild(makeToggleRow("Request Reasoning", "Ask the provider to use its native reasoning/thinking API (Anthropic thinking, Google thinkingConfig, OpenRouter reasoning).", () => mp.reasoning.requestReasoning, (val) => {
-        mp.reasoning.requestReasoning = val;
+      reasoningSection.appendChild(makeSelectRow("API Reasoning", "Inherit uses the connection's reasoning binding (or your global Lumiverse reasoning settings) — same as normal chat. Off disables reasoning for refinement calls. Custom requests a specific effort. Lumiverse translates the choice into each provider's native parameters.", [
+        { value: "inherit", label: "Inherit (Lumiverse settings)" },
+        { value: "off", label: "Off" },
+        { value: "custom", label: "Custom effort" }
+      ], () => mp.reasoning.mode, (val) => {
+        mp.reasoning.mode = val;
         saveActiveProfile();
         render();
       }));
-      if (mp.reasoning.requestReasoning) {
-        reasoningSection.appendChild(makeSelectRow("Reasoning Effort", "How much reasoning to request. Provider-specific mapping applies.", [
-          { value: "auto", label: "Auto" },
+      if (mp.reasoning.mode === "custom") {
+        reasoningSection.appendChild(makeSelectRow("Reasoning Effort", "How much reasoning to request. Unsupported tiers are clamped per provider by Lumiverse.", [
+          { value: "auto", label: "Auto (provider default)" },
           { value: "none", label: "None" },
           { value: "minimal", label: "Minimal" },
           { value: "low", label: "Low" },
           { value: "medium", label: "Medium" },
           { value: "high", label: "High" },
-          { value: "xhigh", label: "Extra High (OpenRouter)" },
-          { value: "max", label: "Max (Anthropic)" }
+          { value: "xhigh", label: "Extra High" },
+          { value: "max", label: "Max" }
         ], () => mp.reasoning.reasoningEffort, (val) => {
           mp.reasoning.reasoningEffort = val;
           saveActiveProfile();

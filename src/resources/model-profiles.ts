@@ -18,7 +18,7 @@ export const DEFAULT_SAMPLERS: GenerationParams = {
 
 export const DEFAULT_REASONING: ReasoningConfig = {
   stripCoTTags: true,
-  requestReasoning: false,
+  mode: "inherit",
   reasoningEffort: "auto",
 };
 
@@ -45,10 +45,22 @@ function normalizeSamplers(raw: unknown): GenerationParams {
 
 function normalizeReasoning(raw: unknown): ReasoningConfig {
   if (!raw || typeof raw !== "object") return { ...DEFAULT_REASONING };
-  const r = raw as Partial<ReasoningConfig>;
+  const r = raw as Partial<ReasoningConfig> & { requestReasoning?: boolean };
+  // Legacy profiles (pre reasoning-mode) stored `requestReasoning: boolean`.
+  // true meant "ask for reasoning at reasoningEffort" -> custom;
+  // false injected nothing, which on Lumiverse 1.1.0+ resolves to the
+  // connection/user reasoning settings anyway -> inherit.
+  let mode: ReasoningConfig["mode"];
+  if (r.mode === "inherit" || r.mode === "off" || r.mode === "custom") {
+    mode = r.mode;
+  } else if (typeof r.requestReasoning === "boolean") {
+    mode = r.requestReasoning ? "custom" : "inherit";
+  } else {
+    mode = DEFAULT_REASONING.mode;
+  }
   return {
     stripCoTTags: typeof r.stripCoTTags === "boolean" ? r.stripCoTTags : DEFAULT_REASONING.stripCoTTags,
-    requestReasoning: typeof r.requestReasoning === "boolean" ? r.requestReasoning : DEFAULT_REASONING.requestReasoning,
+    mode,
     reasoningEffort: (r.reasoningEffort as ReasoningConfig["reasoningEffort"]) ?? DEFAULT_REASONING.reasoningEffort,
   };
 }

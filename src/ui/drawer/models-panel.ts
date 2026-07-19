@@ -7,6 +7,7 @@ import type {
   ModelProfile,
   ModelProfileSummary,
   ReasoningEffort,
+  ReasoningMode,
 } from "../../types";
 import { DEFAULT_PROFILE_ID } from "../../constants";
 import {
@@ -208,7 +209,7 @@ export function createModelsPanel(
       }
       root.appendChild(samplerSection);
 
-      const reasoningSection = makeSection("Reasoning Detection");
+      const reasoningSection = makeSection("Reasoning");
       reasoningSection.appendChild(
         makeDescription("Configure how the refinement LLM handles its own reasoning output.")
       );
@@ -221,27 +222,32 @@ export function createModelsPanel(
         )
       );
       reasoningSection.appendChild(
-        makeToggleRow(
-          "Request Reasoning",
-          "Ask the provider to use its native reasoning/thinking API (Anthropic thinking, Google thinkingConfig, OpenRouter reasoning).",
-          () => mp.reasoning.requestReasoning,
-          (val) => { mp.reasoning.requestReasoning = val; saveActiveProfile(); render(); }
+        makeSelectRow(
+          "API Reasoning",
+          "Inherit uses the connection's reasoning binding (or your global Lumiverse reasoning settings) — same as normal chat. Off disables reasoning for refinement calls. Custom requests a specific effort. Lumiverse translates the choice into each provider's native parameters.",
+          [
+            { value: "inherit", label: "Inherit (Lumiverse settings)" },
+            { value: "off", label: "Off" },
+            { value: "custom", label: "Custom effort" },
+          ],
+          () => mp.reasoning.mode,
+          (val) => { mp.reasoning.mode = val as ReasoningMode; saveActiveProfile(); render(); }
         )
       );
-      if (mp.reasoning.requestReasoning) {
+      if (mp.reasoning.mode === "custom") {
         reasoningSection.appendChild(
           makeSelectRow(
             "Reasoning Effort",
-            "How much reasoning to request. Provider-specific mapping applies.",
+            "How much reasoning to request. Unsupported tiers are clamped per provider by Lumiverse.",
             [
-              { value: "auto", label: "Auto" },
+              { value: "auto", label: "Auto (provider default)" },
               { value: "none", label: "None" },
               { value: "minimal", label: "Minimal" },
               { value: "low", label: "Low" },
               { value: "medium", label: "Medium" },
               { value: "high", label: "High" },
-              { value: "xhigh", label: "Extra High (OpenRouter)" },
-              { value: "max", label: "Max (Anthropic)" },
+              { value: "xhigh", label: "Extra High" },
+              { value: "max", label: "Max" },
             ],
             () => mp.reasoning.reasoningEffort,
             (val) => { mp.reasoning.reasoningEffort = val as ReasoningEffort; saveActiveProfile(); }

@@ -335,19 +335,25 @@ export interface ConnectionProfile {
 
 export type ReasoningEffort = "auto" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
+/** How refinement requests provider-native reasoning. Mapped 1:1 onto the
+ *  host's `GenerationReasoningOverrideDTO.source` — Lumiverse (1.1.0+) owns
+ *  the per-provider translation (Anthropic `thinking`, Google
+ *  `thinkingConfig`, DeepSeek `reasoning_effort`, generic `reasoning`
+ *  object, ...). Hone never writes provider-specific reasoning parameters. */
+export type ReasoningMode = "inherit" | "off" | "custom";
+
 export interface ReasoningConfig {
   /** Strip `<think>` / `<thinking>` / `<reasoning>` tags from LLM output
    *  before extracting the refined text. Case-insensitive; handles
-   *  unclosed tags. */
+   *  unclosed tags. Hone-side text processing, independent of `mode`. */
   stripCoTTags: boolean;
-  /** Request the provider's native reasoning API (Anthropic `thinking`,
-   *  Google `thinkingConfig`, OpenRouter/OpenAI `reasoning`). */
-  requestReasoning: boolean;
-  /** Reasoning effort. Provider-specific mapping:
-   *   - Anthropic: auto, low, medium, high, max
-   *   - Google:    auto, minimal, low, medium, high
-   *   - OpenRouter: auto, none, minimal, low, medium, high, xhigh
-   *   - OpenAI:    auto, low, medium, high, max */
+  /** `inherit` — use the connection's reasoning binding, falling back to
+   *  the user's global reasoning settings (what normal chat does).
+   *  `off` — force reasoning off for refinement calls.
+   *  `custom` — request reasoning at `reasoningEffort` for this profile. */
+  mode: ReasoningMode;
+  /** Effort tier for `mode: "custom"`. `auto` defers to the provider's
+   *  model-specific default. Host clamps unsupported tiers per provider. */
   reasoningEffort: ReasoningEffort;
 }
 
@@ -372,6 +378,9 @@ export interface GenerateRequest {
   messages: Array<{ role: MessageRole; content: string }>;
   connectionProfileId: string;
   parameters?: Record<string, unknown>;
+  /** Host-side reasoning override, translated per provider by Lumiverse
+   *  (1.1.0+). Older hosts ignore the field. */
+  reasoning?: import("lumiverse-spindle-types").GenerationReasoningOverrideDTO;
 }
 
 export interface GenerateResult {

@@ -8,7 +8,7 @@
         "@playwright/test": "^1.47.0",
         "@types/node": "^22.5.0",
         "dotenv": "^16.4.5",
-        "lumiverse-spindle-types": "^0.4.24",
+        "lumiverse-spindle-types": "^0.6.6",
         "typescript": "^6.0.2",
         "vitest": "^3.0.0",
       },
@@ -173,7 +173,7 @@
 
     "loupe": ["loupe@3.2.1", "", {}, "sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ=="],
 
-    "lumiverse-spindle-types": ["lumiverse-spindle-types@0.4.24", "", {}, "sha512-xznKXDcHykZbh54x8gi1KtFgja/X3kZktlWZiTY1/yCcNS0fYtIdcV7Z+jcTSHUNc/xrxUB6wklJH4jcxlnBdA=="],
+    "lumiverse-spindle-types": ["lumiverse-spindle-types@0.6.6", "", {}, "sha512-ttZd84XsVGXvEhsuN7K44qGOhn5LR1x5i2YEjvgwuRGge8EoPBFxAGzy7L0qz/oPoShyghY9+ComPYypucJEKQ=="],
 
     "magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 

@@ -156,6 +156,7 @@ function buildSpindleRequest(
     connection_id: resolved.id,
     model: resolved.model,
     parameters,
+    reasoning: req.reasoning,
     userId,
     signal,
   } as GenerationRequestDTO & { model?: string };
@@ -363,7 +364,7 @@ export async function generate(
 
   hlog.debug(
     userId,
-    `Generation: connection=${resolved.id}${req.connectionProfileId ? "" : " (default)"}, model=${resolved.model || "none"}, msgs=${req.messages.length}, streaming=${settings.streamGenerations}, params=${JSON.stringify(parametersForLog)}`
+    `Generation: connection=${resolved.id}${req.connectionProfileId ? "" : " (default)"}, model=${resolved.model || "none"}, msgs=${req.messages.length}, streaming=${settings.streamGenerations}, reasoning=${req.reasoning ? JSON.stringify(req.reasoning) : "(inherit)"}, params=${JSON.stringify(parametersForLog)}`
   );
   if (hlog.isFullPayloadEnabled(userId)) {
     hlog.debug(userId, `Generation request messages: ${safeStringify(req.messages)}`);
