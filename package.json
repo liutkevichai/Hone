@@ -1,6 +1,6 @@
 {
   "name": "hone-lumiverse",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "scripts": {
     "gen:assets": "bun scripts/gen-asset-modules.ts",
