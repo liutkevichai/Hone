@@ -69,7 +69,13 @@ export async function buildContext(
   if (!message) throw new Error(`Message ${messageId} not found in chat ${chatId}`);
 
   const chat = await spindle.chats.get(chatId, userId);
-  const characterId = chat?.character_id || undefined;
+  // In group chats the speaking character is stored per-message in
+  // `extra.character_id`; `chat.character_id` is only the group's primary
+  // (first-added) character. Prefer the message's own author so that
+  // character-specific macros ({{char}}, {{description}}, {{charGroupFocused}},
+  // …) resolve to the character whose message is being refined.
+  const characterId =
+    (message.extra?.character_id as string | undefined) || chat?.character_id || undefined;
   const isUserMessage = message.role === "user";
 
   let latest: string;
