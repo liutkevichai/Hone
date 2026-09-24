@@ -523,13 +523,19 @@ export async function enhanceUserMessage(
 
     const model = await resolveModel(settings, userId);
     const chat = await spindle.chats.get(chatId, userId);
-    const characterId = chat?.character_id || undefined;
 
     const messages = await spindle.chat.getMessages(chatId);
 
     const prior = findLastAssistantMessage(messages, messages.length - 1);
     const latest = prior?.message.content || "";
     const latestId = prior?.message.id || null;
+
+    // No target message here, so infer the active character from the most
+    // recent assistant reply. In group chats each message stores its author in
+    // `extra.character_id`; `chat.character_id` is only the group's primary
+    // (first-added) character, which would resolve character macros wrongly.
+    const characterId =
+      (prior?.message.extra?.character_id as string | undefined) || chat?.character_id || undefined;
 
     const totalBudget = settings.maxMessageContextTokens > 0
       ? settings.maxMessageContextTokens

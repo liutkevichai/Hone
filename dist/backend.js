@@ -5830,7 +5830,7 @@ async function buildContext(chatId, messageId, userId, settings) {
   if (!message)
     throw new Error(`Message ${messageId} not found in chat ${chatId}`);
   const chat = await spindle.chats.get(chatId, userId);
-  const characterId = chat?.character_id || undefined;
+  const characterId = message.extra?.character_id || chat?.character_id || undefined;
   const isUserMessage = message.role === "user";
   let latest;
   let latestId;
@@ -6224,11 +6224,11 @@ async function enhanceUserMessage(text, chatId, userId, mode, requestId, send) {
     debug(userId, `enhanceUserMessage: input preset="${preset.name}" strategy=${preset.strategy} prompts=${preset.prompts.length} head=${preset.headCollection.length}`);
     const model = await resolveModel(settings, userId);
     const chat = await spindle.chats.get(chatId, userId);
-    const characterId = chat?.character_id || undefined;
     const messages = await spindle.chat.getMessages(chatId);
     const prior = findLastAssistantMessage(messages, messages.length - 1);
     const latest = prior?.message.content || "";
     const latestId = prior?.message.id || null;
+    const characterId = prior?.message.extra?.character_id || chat?.character_id || undefined;
     const totalBudget = settings.maxMessageContextTokens > 0 ? settings.maxMessageContextTokens : DEFAULT_MESSAGE_CONTEXT_TOKENS;
     const historyBudget = Math.max(0, totalBudget - approxTokens(latest));
     const history = buildChatHistoryBlock(messages, messages.length - 1, latestId, historyBudget);
