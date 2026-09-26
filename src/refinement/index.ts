@@ -48,6 +48,8 @@ function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
 
 export interface RefineSingleOptions {
   externalSignal?: AbortSignal;
+  /** One-off preset override. Unset: the active preset for the message's slot. */
+  presetId?: string;
 }
 
 export async function refineSingle(
@@ -87,6 +89,7 @@ export async function refineSingle(
         send,
         settings,
         signal,
+        presetOverrideId: options.presetId,
       });
     } finally {
       cancelRegistry.release(refineCancelKey, ownController);
@@ -103,10 +106,11 @@ interface RefineSingleBodyInput {
   send: SendFn;
   settings: import("../types").HoneSettings;
   signal: AbortSignal;
+  presetOverrideId?: string;
 }
 
 async function runRefineSingleBody(args: RefineSingleBodyInput): Promise<boolean> {
-  const { chatId, messageId, userId, send, settings, signal } = args;
+  const { chatId, messageId, userId, send, settings, signal, presetOverrideId } = args;
 
   send({ type: "refine-started", messageId });
 
@@ -133,7 +137,8 @@ async function runRefineSingleBody(args: RefineSingleBodyInput): Promise<boolean
     const model = await resolveModel(settings, userId);
 
     const isUserMessage = message.role === "user";
-    const presetId = isUserMessage ? settings.currentInputPresetId : settings.currentPresetId;
+    const presetId =
+      presetOverrideId || (isUserMessage ? settings.currentInputPresetId : settings.currentPresetId);
     const slotLabel = isUserMessage ? "input" : "output";
     const startTime = Date.now();
     let refinedText: string;
@@ -149,7 +154,9 @@ async function runRefineSingleBody(args: RefineSingleBodyInput): Promise<boolean
       send({
         type: "refine-error",
         messageId,
-        error: `Active ${slotLabel} preset "${presetId}" not found. Select a preset in Hone Settings.`,
+        error: presetOverrideId
+          ? `Preset "${presetId}" not found. It may have been deleted.`
+          : `Active ${slotLabel} preset "${presetId}" not found. Select a preset in Hone Settings.`,
       });
       return false;
     }

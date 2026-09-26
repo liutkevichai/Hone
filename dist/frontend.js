@@ -5940,6 +5940,8 @@ button[data-hone-btn].hone-msg-btn--busy .hone-icon--spinner {
 function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isReady) {
   const refinedIds = new Set;
   const busyIds = new Set;
+  let customPresets = [];
+  let activePresetId = "";
   const removeStyle = ctx.dom.addStyle(INJECTOR_STYLES);
   const observation = observeRoot({
     findRoot: () => document.querySelector('[data-component="MessageList"]'),
@@ -6036,12 +6038,13 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
         return;
       if (!refinedIds.has(messageId) || busyIds.has(messageId))
         return;
+      const menuPosition = { x: e.clientX, y: e.clientY };
       btn.classList.add("hone-msg-btn--holding");
       holdTimer = window.setTimeout(() => {
         holdTimer = null;
         holdFired = true;
         btn.classList.remove("hone-msg-btn--holding");
-        handleRerun(messageId);
+        handleRerun(messageId, menuPosition);
       }, HOLD_TO_RERUN_MS);
     });
     btn.addEventListener("pointerup", cancelHold);
@@ -6074,7 +6077,7 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
     const refined = refinedIds.has(messageId);
     const busy = busyIds.has(messageId);
     const disabled = !isReady();
-    const title = busy ? "Honing... (click to cancel)" : refined ? "Undo Hone refinement (hold to re-hone from current text)" : "Hone this message";
+    const title = busy ? "Honing... (click to cancel)" : refined ? customPresets.length > 0 ? "Undo Hone refinement (hold to re-hone from current text with a chosen preset)" : "Undo Hone refinement (hold to re-hone from current text)" : "Hone this message";
     buttonsForMessage(messageId).forEach((btn) => {
       btn.disabled = disabled;
       btn.title = title;
@@ -6111,7 +6114,32 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
       sendToBackend({ type: "refine", chatId, messageId });
     }
   }
-  function handleRerun(messageId) {
+  async function handleRerun(messageId, position) {
+    if (!isReady())
+      return;
+    if (!getActiveChatId())
+      return;
+    if (busyIds.has(messageId))
+      return;
+    let presetId;
+    if (customPresets.length > 0) {
+      let selectedKey;
+      try {
+        ({ selectedKey } = await ctx.ui.showContextMenu({
+          position,
+          items: customPresets.map((p) => ({
+            key: p.id,
+            label: p.name,
+            active: p.id === activePresetId
+          }))
+        }));
+      } catch {
+        return;
+      }
+      if (!selectedKey)
+        return;
+      presetId = selectedKey;
+    }
     if (!isReady())
       return;
     const chatId = getActiveChatId();
@@ -6121,7 +6149,7 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
       return;
     busyIds.add(messageId);
     updateButtonState(messageId);
-    sendToBackend({ type: "refine", chatId, messageId });
+    sendToBackend({ type: "refine", chatId, messageId, presetId });
   }
   return {
     setRefinedMessages(ids) {
@@ -6136,6 +6164,11 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
       else
         busyIds.delete(messageId);
       updateButtonState(messageId);
+    },
+    setPresets(presets, activeId) {
+      customPresets = presets.filter((p) => !p.builtIn && p.slot === "output");
+      activePresetId = activeId;
+      updateAllButtonStates();
     },
     rescan() {
       observation.rescan();
@@ -6476,6 +6509,7 @@ function setup(ctx) {
   const removeStyle = ctx.dom.addStyle(STYLES);
   cleanups.push(removeStyle);
   let currentSettings = null;
+  let currentPresets = [];
   let activeChatId = null;
   let ready = false;
   function isReady() {
@@ -6527,6 +6561,7 @@ function setup(ctx) {
       case "settings":
         currentSettings = msg.settings;
         settingsPage.update(msg.settings);
+        messageInjector?.setPresets(currentPresets, msg.settings.currentPresetId);
         inputAreaInjector?.setEnabled(msg.settings.userEnhanceEnabled);
         if (!floatWidget) {
           try {
@@ -6567,6 +6602,10 @@ function setup(ctx) {
         }
         break;
       }
+      case "presets":
+        currentPresets = msg.presets;
+        messageInjector?.setPresets(msg.presets, msg.activeId);
+        break;
       case "generation-state":
         inputAreaInjector?.setBusy(msg.generating);
         break;

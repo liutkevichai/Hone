@@ -1,5 +1,5 @@
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
-import type { FrontendToBackend, BackendToFrontend, HoneSettings } from "../types";
+import type { FrontendToBackend, BackendToFrontend, HoneSettings, PresetSummary } from "../types";
 import { STYLES } from "./styles";
 import { createSettingsPage } from "./settings-page";
 import { createDrawerTab } from "./drawer";
@@ -36,6 +36,7 @@ export function setup(ctx: SpindleFrontendContext) {
   cleanups.push(removeStyle);
 
   let currentSettings: HoneSettings | null = null;
+  let currentPresets: PresetSummary[] = [];
   let activeChatId: string | null = null;
 
   // Flips to true when the backend sends its first `active-chat` in
@@ -125,6 +126,7 @@ export function setup(ctx: SpindleFrontendContext) {
       case "settings":
         currentSettings = msg.settings;
         settingsPage.update(msg.settings);
+        messageInjector?.setPresets(currentPresets, msg.settings.currentPresetId);
         inputAreaInjector?.setEnabled(msg.settings.userEnhanceEnabled);
         if (!floatWidget) {
           try {
@@ -176,6 +178,11 @@ export function setup(ctx: SpindleFrontendContext) {
         }
         break;
       }
+
+      case "presets":
+        currentPresets = msg.presets;
+        messageInjector?.setPresets(msg.presets, msg.activeId);
+        break;
 
       case "generation-state":
         // Block the input-area Hone button during main-chat
