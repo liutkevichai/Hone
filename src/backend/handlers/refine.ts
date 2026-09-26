@@ -37,8 +37,12 @@ export const refineHandlers: HandlerMap = {
   async refine(msg, ctx) {
     ctx = beginUserAction(ctx);
     if (!requirePermissions(REFINE_PERMS, ctx, msg.messageId)) return;
-    hlog.debug(ctx.userId, `Refining message ${msg.messageId} in chat ${msg.chatId}`);
-    await refineSingle(msg.chatId, msg.messageId, ctx.userId, ctx.send);
+    const presetId = typeof msg.presetId === "string" && msg.presetId ? msg.presetId : undefined;
+    hlog.debug(
+      ctx.userId,
+      `Refining message ${msg.messageId} in chat ${msg.chatId}${presetId ? ` with preset override "${presetId}"` : ""}`
+    );
+    await refineSingle(msg.chatId, msg.messageId, ctx.userId, ctx.send, { presetId });
     await sendRefinedStateFor(ctx.userId, ctx.send);
   },
 

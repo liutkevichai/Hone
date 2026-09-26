@@ -15,12 +15,14 @@
 // render cycle. The drawer and float widget stay functional without it.
 
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
-import type { FrontendToBackend } from "../../types";
+import type { FrontendToBackend, PresetSummary } from "../../types";
 import { REFINE_ICON_SVG, UNDO_ICON_SVG, SPINNER_ICON_SVG } from "../icons";
 import { observeRoot } from "./observe-root";
 
 /** Press-and-hold duration on a refined button before a re-hone fires
- *  (lock the current refinement as the new base and refine again). */
+ *  (lock the current refinement as the new base and refine again). When
+ *  the user has custom output presets, the hold opens a menu to pick
+ *  which one to re-hone with. */
 const HOLD_TO_RERUN_MS = 600;
 
 /* Matches the native `.pill button` shape (26×26, transparent, 6px
@@ -90,6 +92,8 @@ export interface MessageActionInjector {
   /** Optimistic busy on click; reconciled by refine-started /
    *  refine-complete. */
   setBusy(messageId: string, busy: boolean): void;
+  /** Mirror of the backend `presets` push; feeds the re-hone menu. */
+  setPresets(presets: PresetSummary[], activeId: string): void;
   rescan(): void;
   destroy(): void;
 }
@@ -102,6 +106,9 @@ export function createMessageActionInjector(
 ): MessageActionInjector {
   const refinedIds = new Set<string>();
   const busyIds = new Set<string>();
+  /** User-created output presets, offered by the re-hone menu. */
+  let customPresets: PresetSummary[] = [];
+  let activePresetId = "";
 
   const removeStyle = ctx.dom.addStyle(INJECTOR_STYLES);
 
@@ -226,12 +233,13 @@ export function createMessageActionInjector(
       if (e.button !== 0) return;
       if (!isReady()) return;
       if (!refinedIds.has(messageId) || busyIds.has(messageId)) return;
+      const menuPosition = { x: e.clientX, y: e.clientY };
       btn.classList.add("hone-msg-btn--holding");
       holdTimer = window.setTimeout(() => {
         holdTimer = null;
         holdFired = true;
         btn.classList.remove("hone-msg-btn--holding");
-        handleRerun(messageId);
+        void handleRerun(messageId, menuPosition);
       }, HOLD_TO_RERUN_MS);
     });
     btn.addEventListener("pointerup", cancelHold);
@@ -277,7 +285,9 @@ export function createMessageActionInjector(
     const title = busy
       ? "Honing... (click to cancel)"
       : refined
-      ? "Undo Hone refinement (hold to re-hone from current text)"
+      ? customPresets.length > 0
+        ? "Undo Hone refinement (hold to re-hone from current text with a chosen preset)"
+        : "Undo Hone refinement (hold to re-hone from current text)"
       : "Hone this message";
     buttonsForMessage(messageId).forEach((btn) => {
       btn.disabled = disabled;
@@ -321,8 +331,34 @@ export function createMessageActionInjector(
   /** Hold-to-rerun on an already-refined message: refine the current
    *  content as the new base. The undo entry is overwritten backend-side,
    *  so a later click-undo returns to the version that was held, not the
-   *  pristine original. */
-  function handleRerun(messageId: string) {
+   *  pristine original. With custom output presets available, the user
+   *  first picks which one to re-hone with (a one-off override; the active
+   *  preset is unchanged). Without any, re-hone uses the active preset. */
+  async function handleRerun(messageId: string, position: { x: number; y: number }) {
+    if (!isReady()) return;
+    if (!getActiveChatId()) return;
+    if (busyIds.has(messageId)) return;
+
+    let presetId: string | undefined;
+    if (customPresets.length > 0) {
+      let selectedKey: string | null;
+      try {
+        ({ selectedKey } = await ctx.ui.showContextMenu({
+          position,
+          items: customPresets.map((p) => ({
+            key: p.id,
+            label: p.name,
+            active: p.id === activePresetId,
+          })),
+        }));
+      } catch {
+        return;
+      }
+      if (!selectedKey) return;
+      presetId = selectedKey;
+    }
+
+    // State may have moved while the menu was open.
     if (!isReady()) return;
     const chatId = getActiveChatId();
     if (!chatId) return;
@@ -330,7 +366,7 @@ export function createMessageActionInjector(
 
     busyIds.add(messageId);
     updateButtonState(messageId);
-    sendToBackend({ type: "refine", chatId, messageId });
+    sendToBackend({ type: "refine", chatId, messageId, presetId });
   }
 
   return {
@@ -343,6 +379,11 @@ export function createMessageActionInjector(
       if (busy) busyIds.add(messageId);
       else busyIds.delete(messageId);
       updateButtonState(messageId);
+    },
+    setPresets(presets, activeId) {
+      customPresets = presets.filter((p) => !p.builtIn && p.slot === "output");
+      activePresetId = activeId;
+      updateAllButtonStates();
     },
     rescan() {
       observation.rescan();

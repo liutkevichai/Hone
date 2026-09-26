@@ -5906,7 +5906,8 @@ async function refineSingle(chatId, messageId, userId, send, options = {}) {
         userId,
         send,
         settings,
-        signal
+        signal,
+        presetOverrideId: options.presetId
       });
     } finally {
       release(refineCancelKey, ownController);
@@ -5915,7 +5916,7 @@ async function refineSingle(chatId, messageId, userId, send, options = {}) {
   return success;
 }
 async function runRefineSingleBody(args) {
-  const { chatId, messageId, userId, send, settings, signal } = args;
+  const { chatId, messageId, userId, send, settings, signal, presetOverrideId } = args;
   send({ type: "refine-started", messageId });
   try {
     const { message, latest, context, pov, userMessage, characterId, loreBlock } = await buildContext(chatId, messageId, userId, settings);
@@ -5929,7 +5930,7 @@ async function runRefineSingleBody(args) {
     }
     const model = await resolveModel(settings, userId);
     const isUserMessage = message.role === "user";
-    const presetId = isUserMessage ? settings.currentInputPresetId : settings.currentPresetId;
+    const presetId = presetOverrideId || (isUserMessage ? settings.currentInputPresetId : settings.currentPresetId);
     const slotLabel = isUserMessage ? "input" : "output";
     const startTime = Date.now();
     let refinedText;
@@ -5941,7 +5942,7 @@ async function runRefineSingleBody(args) {
       send({
         type: "refine-error",
         messageId,
-        error: `Active ${slotLabel} preset "${presetId}" not found. Select a preset in Hone Settings.`
+        error: presetOverrideId ? `Preset "${presetId}" not found. It may have been deleted.` : `Active ${slotLabel} preset "${presetId}" not found. Select a preset in Hone Settings.`
       });
       return false;
     }
@@ -6540,8 +6541,9 @@ var refineHandlers = {
     ctx = beginUserAction(ctx);
     if (!requirePermissions(REFINE_PERMS, ctx, msg.messageId))
       return;
-    debug(ctx.userId, `Refining message ${msg.messageId} in chat ${msg.chatId}`);
-    await refineSingle(msg.chatId, msg.messageId, ctx.userId, ctx.send);
+    const presetId = typeof msg.presetId === "string" && msg.presetId ? msg.presetId : undefined;
+    debug(ctx.userId, `Refining message ${msg.messageId} in chat ${msg.chatId}${presetId ? ` with preset override "${presetId}"` : ""}`);
+    await refineSingle(msg.chatId, msg.messageId, ctx.userId, ctx.send, { presetId });
     await sendRefinedStateFor(ctx.userId, ctx.send);
   },
   async undo(msg, ctx) {

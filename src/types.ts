@@ -195,7 +195,14 @@ export interface PovPresetSummary extends PovPreset {
 }
 
 export type FrontendToBackend =
-  | { type: "refine"; messageId: string; chatId: string }
+  | {
+      type: "refine";
+      messageId: string;
+      chatId: string;
+      /** One-off preset override (e.g. picked from the re-hone menu).
+       *  Does not change the active preset. Unset: use the active one. */
+      presetId?: string;
+    }
   | { type: "undo"; messageId: string; chatId: string }
   | { type: "bulk-refine"; messageIds: string[]; chatId: string }
   | { type: "enhance"; text: string; chatId: string; mode: EnhanceMode; requestId: number }
