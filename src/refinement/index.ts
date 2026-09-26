@@ -634,8 +634,13 @@ export async function previewStage(
 
       pov = await resolvePovContent(userId, slot === "input" ? settings.userPov : settings.pov);
 
+      // The preview renders against the last assistant message, so resolve
+      // character macros for that message's author. In group chats the author
+      // is stored in `extra.character_id`; `chat.character_id` is only the
+      // group's primary character.
       const chat = await spindle.chats.get(chatId, userId);
-      characterId = chat?.character_id || undefined;
+      characterId =
+        (prior?.message.extra?.character_id as string | undefined) || chat?.character_id || undefined;
       resolveChatId = chatId;
 
       const lore = await fetchLoreBlock(chatId, userId, settings.maxLorebookTokens);
