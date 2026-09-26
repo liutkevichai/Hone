@@ -6294,7 +6294,7 @@ async function previewStage(preset, stage, stageIndex, totalStages, userId, prop
       context = buildChatHistoryBlock(messages, messages.length - 1, latestId, historyBudget);
       pov = await resolvePovContent(userId, slot === "input" ? settings.userPov : settings.pov);
       const chat = await spindle.chats.get(chatId, userId);
-      characterId = chat?.character_id || undefined;
+      characterId = prior?.message.extra?.character_id || chat?.character_id || undefined;
       resolveChatId = chatId;
       const lore = await fetchLoreBlock(chatId, userId, settings.maxLorebookTokens);
       loreBlock = lore.block;
