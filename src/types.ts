@@ -294,6 +294,11 @@ export type BackendToFrontend =
       lastAiMessageId?: string | null;
       lastAiStages?: StageRecord[];
       refinedMessageIds: string[];
+      /** Messages in this chat with a queued or running refine. Only set
+       *  on replies to `get-active-chat` (a state resync); when present it
+       *  is authoritative, so the frontend clears busy spinners whose
+       *  `refine-complete` it never received. */
+      busyMessageIds?: string[];
     }
   | { type: "generation-state"; generating: boolean }
   | {

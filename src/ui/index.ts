@@ -28,6 +28,12 @@ function playNotificationSound(customUrl: string) {
 /** Interval between initial IPC handshake retries while the backend
  *  hasn't confirmed our user's state via `active-chat`. */
 const READY_RETRY_INTERVAL_MS = 3000;
+/** While a spinner is showing, periodically resync with the backend so a
+ *  lost `refine-complete` can't leave it spinning forever. */
+const BUSY_RESYNC_INTERVAL_MS = 15000;
+/** Follow-up resync after the tab returns to the foreground: the host
+ *  socket may still be reconnecting when the first request goes out. */
+const FOREGROUND_RESYNC_DELAY_MS = 3000;
 
 export function setup(ctx: SpindleFrontendContext) {
   const cleanups: (() => void)[] = [];
@@ -172,6 +178,8 @@ export function setup(ctx: SpindleFrontendContext) {
         // directly. The per-message injector reflects backend state,
         // never derives it.
         messageInjector?.setRefinedMessages(msg.refinedMessageIds);
+        // Present only on resync replies: authoritative in-flight refines.
+        if (msg.busyMessageIds) messageInjector?.reconcileBusy(msg.busyMessageIds);
         if (activeChatId) {
           messageInjector?.rescan();
           inputAreaInjector?.rescan();
@@ -343,6 +351,40 @@ export function setup(ctx: SpindleFrontendContext) {
     sendInitialHandshake();
   }, READY_RETRY_INTERVAL_MS);
   cleanups.push(() => window.clearInterval(retryTimer));
+
+  // Backend -> frontend messages are fire-and-forget over the host socket.
+  // When the tab is hidden the browser can freeze the page and the host
+  // drops/suspends the socket, so `refine-complete` (and generation-state)
+  // can be lost and a spinner would never stop. `get-active-chat` replies
+  // with the authoritative in-flight state; ask for it when the tab comes
+  // back, and periodically while anything is still spinning.
+  const requestResync = () => {
+    if (!ready || document.visibilityState !== "visible") return;
+    sendToBackend({ type: "get-active-chat" });
+  };
+  let foregroundResyncTimer: number | null = null;
+  const onForeground = () => {
+    if (document.visibilityState !== "visible") return;
+    requestResync();
+    if (foregroundResyncTimer !== null) window.clearTimeout(foregroundResyncTimer);
+    foregroundResyncTimer = window.setTimeout(() => {
+      foregroundResyncTimer = null;
+      requestResync();
+    }, FOREGROUND_RESYNC_DELAY_MS);
+  };
+  document.addEventListener("visibilitychange", onForeground);
+  window.addEventListener("pageshow", onForeground);
+  window.addEventListener("online", onForeground);
+  const busyResyncTimer = window.setInterval(() => {
+    if (messageInjector?.hasBusy() || floatWidget?.isBusy()) requestResync();
+  }, BUSY_RESYNC_INTERVAL_MS);
+  cleanups.push(() => {
+    document.removeEventListener("visibilitychange", onForeground);
+    window.removeEventListener("pageshow", onForeground);
+    window.removeEventListener("online", onForeground);
+    if (foregroundResyncTimer !== null) window.clearTimeout(foregroundResyncTimer);
+    window.clearInterval(busyResyncTimer);
+  });
 
   // Lumiverse signals chat switches by writing `activeChatId` to user
   // settings, which fires SETTINGS_UPDATED. This event is already

@@ -5142,6 +5142,49 @@ function makeAbortError(message = "ABORTED") {
 }
 var ABORTED_ERROR_MARKER = "ABORTED";
 
+// src/generation/pending.ts
+var pending = new Map;
+function entryKey(chatId, messageId) {
+  return `${chatId}:${messageId}`;
+}
+function markPending(userId, chatId, messageId) {
+  const key = entryKey(chatId, messageId);
+  let forUser = pending.get(userId);
+  if (!forUser) {
+    forUser = new Map;
+    pending.set(userId, forUser);
+  }
+  forUser.set(key, (forUser.get(key) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released)
+      return;
+    released = true;
+    const current = pending.get(userId);
+    if (!current)
+      return;
+    const count = (current.get(key) ?? 0) - 1;
+    if (count > 0)
+      current.set(key, count);
+    else
+      current.delete(key);
+    if (current.size === 0)
+      pending.delete(userId);
+  };
+}
+function listPendingMessageIds(userId, chatId) {
+  const forUser = pending.get(userId);
+  if (!forUser)
+    return [];
+  const prefix = `${chatId}:`;
+  const ids = [];
+  for (const key of forUser.keys()) {
+    if (key.startsWith(prefix))
+      ids.push(key.slice(prefix.length));
+  }
+  return ids;
+}
+
 // src/resources/model-profiles.ts
 var DEFAULT_SAMPLERS = {
   temperature: null,
@@ -5885,34 +5928,39 @@ function sleepAbortable(ms, signal) {
 async function refineSingle(chatId, messageId, userId, send, options = {}) {
   let success = false;
   debug(userId, `refineSingle: enqueued ${messageId.slice(0, 8)} in ${chatId.slice(0, 8)}`);
-  await enqueueChatOperation(`${userId}:${chatId}`, async () => {
-    debug(userId, `refineSingle: queue slot started ${messageId.slice(0, 8)}`);
-    const settings = await getSettings(userId);
-    if (!settings.enabled) {
-      debug(userId, `refineSingle: skipped ${messageId.slice(0, 8)}: settings.enabled=false`);
-      return;
-    }
-    if (options.externalSignal?.aborted) {
-      debug(userId, `refineSingle: pre-start abort ${messageId.slice(0, 8)}: external signal already fired`);
-      return;
-    }
-    const refineCancelKey = refineKey(userId, chatId, messageId);
-    const ownController = register(refineCancelKey);
-    const signal = composeSignals(options.externalSignal, ownController.signal);
-    try {
-      success = await runRefineSingleBody({
-        chatId,
-        messageId,
-        userId,
-        send,
-        settings,
-        signal,
-        presetOverrideId: options.presetId
-      });
-    } finally {
-      release(refineCancelKey, ownController);
-    }
-  });
+  const releasePending = markPending(userId, chatId, messageId);
+  try {
+    await enqueueChatOperation(`${userId}:${chatId}`, async () => {
+      debug(userId, `refineSingle: queue slot started ${messageId.slice(0, 8)}`);
+      const settings = await getSettings(userId);
+      if (!settings.enabled) {
+        debug(userId, `refineSingle: skipped ${messageId.slice(0, 8)}: settings.enabled=false`);
+        return;
+      }
+      if (options.externalSignal?.aborted) {
+        debug(userId, `refineSingle: pre-start abort ${messageId.slice(0, 8)}: external signal already fired`);
+        return;
+      }
+      const refineCancelKey = refineKey(userId, chatId, messageId);
+      const ownController = register(refineCancelKey);
+      const signal = composeSignals(options.externalSignal, ownController.signal);
+      try {
+        success = await runRefineSingleBody({
+          chatId,
+          messageId,
+          userId,
+          send,
+          settings,
+          signal,
+          presetOverrideId: options.presetId
+        });
+      } finally {
+        release(refineCancelKey, ownController);
+      }
+    });
+  } finally {
+    releasePending();
+  }
   return success;
 }
 async function runRefineSingleBody(args) {
@@ -6099,6 +6147,7 @@ async function runRefineSingleBody(args) {
 }
 async function undoRefine(chatId, messageId, userId, send) {
   debug(userId, `undoRefine: enqueued ${messageId.slice(0, 8)}`);
+  const releasePending = markPending(userId, chatId, messageId);
   return enqueueChatOperation(`${userId}:${chatId}`, async () => {
     debug(userId, `undoRefine: queue slot started ${messageId.slice(0, 8)}`);
     try {
@@ -6134,7 +6183,7 @@ async function undoRefine(chatId, messageId, userId, send) {
       spindle.log.warn(`[Hone] Undo failed for ${messageId}: ${error}`);
       send({ type: "refine-error", messageId, error: `Undo failed: ${error}` });
     }
-  });
+  }).finally(releasePending);
 }
 async function refineBulk(chatId, messageIds, userId, send) {
   const settings = await getSettings(userId);
@@ -6410,9 +6459,11 @@ function removeActiveGeneration(userId, id) {
   if (set.size === 0)
     activeGenerationsByUser.delete(userId);
 }
+function isGeneratingFor(userId) {
+  return (activeGenerationsByUser.get(userId)?.size ?? 0) > 0;
+}
 function publishGeneratingFor(userId, sendTo) {
-  const generating = (activeGenerationsByUser.get(userId)?.size ?? 0) > 0;
-  sendTo({ type: "generation-state", generating }, userId);
+  sendTo({ type: "generation-state", generating: isGeneratingFor(userId) }, userId);
 }
 async function handleSwipeDeletion(userId, chatId, messageId, deletedSwipeId) {
   const stored = await listUndoEntriesForMessage(userId, chatId, messageId);
@@ -7188,24 +7239,29 @@ var settingsHandlers = {
     debug(ctx.userId, `ipc get-active-chat: fetching`);
     const chatId = await getActiveChatIdFor(ctx.userId);
     debug(ctx.userId, `ipc get-active-chat: active chat = ${chatId || "none"}`);
+    ctx.send({ type: "generation-state", generating: isGeneratingFor(ctx.userId) });
     if (!chatId) {
       ctx.send({
         type: "active-chat",
         chatId: null,
         lastMessageRefined: false,
         lastAiMessageId: null,
-        refinedMessageIds: []
+        refinedMessageIds: [],
+        busyMessageIds: []
       });
       return;
     }
     const snap = await snapshotLastAiState(ctx.userId, chatId);
+    const busyMessageIds = listPendingMessageIds(ctx.userId, chatId);
+    debug(ctx.userId, `ipc get-active-chat: ${busyMessageIds.length} refine(s) in flight`);
     ctx.send({
       type: "active-chat",
       chatId,
       lastMessageRefined: snap.refined,
       lastAiMessageId: snap.messageId,
       lastAiStages: snap.stages,
-      refinedMessageIds: snap.refinedMessageIds
+      refinedMessageIds: snap.refinedMessageIds,
+      busyMessageIds
     });
   }
 };
