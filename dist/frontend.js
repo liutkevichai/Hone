@@ -6036,7 +6036,9 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
         return;
       if (!isReady())
         return;
-      if (!refinedIds.has(messageId) || busyIds.has(messageId))
+      if (busyIds.has(messageId))
+        return;
+      if (!refinedIds.has(messageId) && customPresets.length === 0)
         return;
       const menuPosition = { x: e.clientX, y: e.clientY };
       btn.classList.add("hone-msg-btn--holding");
@@ -6044,7 +6046,7 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
         holdTimer = null;
         holdFired = true;
         btn.classList.remove("hone-msg-btn--holding");
-        handleRerun(messageId, menuPosition);
+        handleHold(messageId, menuPosition);
       }, HOLD_TO_RERUN_MS);
     });
     btn.addEventListener("pointerup", cancelHold);
@@ -6077,7 +6079,7 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
     const refined = refinedIds.has(messageId);
     const busy = busyIds.has(messageId);
     const disabled = !isReady();
-    const title = busy ? "Honing... (click to cancel)" : refined ? customPresets.length > 0 ? "Undo Hone refinement (hold to re-hone from current text with a chosen preset)" : "Undo Hone refinement (hold to re-hone from current text)" : "Hone this message";
+    const title = busy ? "Honing... (click to cancel)" : refined ? customPresets.length > 0 ? "Undo Hone refinement (hold to re-hone from current text with a chosen preset)" : "Undo Hone refinement (hold to re-hone from current text)" : customPresets.length > 0 ? "Hone this message (hold to pick a preset)" : "Hone this message";
     buttonsForMessage(messageId).forEach((btn) => {
       btn.disabled = disabled;
       btn.title = title;
@@ -6114,7 +6116,7 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
       sendToBackend({ type: "refine", chatId, messageId });
     }
   }
-  async function handleRerun(messageId, position) {
+  async function handleHold(messageId, position) {
     if (!isReady())
       return;
     if (!getActiveChatId())

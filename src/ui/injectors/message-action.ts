@@ -19,10 +19,11 @@ import type { FrontendToBackend, PresetSummary } from "../../types";
 import { REFINE_ICON_SVG, UNDO_ICON_SVG, SPINNER_ICON_SVG } from "../icons";
 import { observeRoot } from "./observe-root";
 
-/** Press-and-hold duration on a refined button before a re-hone fires
- *  (lock the current refinement as the new base and refine again). When
- *  the user has custom output presets, the hold opens a menu to pick
- *  which one to re-hone with. */
+/** Press-and-hold duration before the hold action fires. On a refined
+ *  button it re-hones (lock the current refinement as the new base and
+ *  refine again). When the user has custom output presets, the hold
+ *  opens a menu to pick which one to hone with, on refined and
+ *  unrefined messages alike. */
 const HOLD_TO_RERUN_MS = 600;
 
 /* Matches the native `.pill button` shape (26×26, transparent, 6px
@@ -216,7 +217,9 @@ export function createMessageActionInjector(
     // Press-and-hold on a refined button re-runs Hone on the current
     // (already-refined) text instead of undoing: the backend's saveUndo
     // overwrites the entry, so the held-down version becomes the new
-    // undo base ("lock"). Plain click keeps its undo meaning.
+    // undo base ("lock"). Plain click keeps its undo meaning. On an
+    // unrefined button the hold lets the user pick a custom preset for
+    // the first hone; plain click still uses the active preset.
     let holdTimer: number | null = null;
     let holdFired = false;
     const cancelHold = () => {
@@ -232,14 +235,17 @@ export function createMessageActionInjector(
       holdFired = false;
       if (e.button !== 0) return;
       if (!isReady()) return;
-      if (!refinedIds.has(messageId) || busyIds.has(messageId)) return;
+      if (busyIds.has(messageId)) return;
+      // On an unrefined message the hold only exists to pick a preset;
+      // without custom presets, leave the press as a plain click.
+      if (!refinedIds.has(messageId) && customPresets.length === 0) return;
       const menuPosition = { x: e.clientX, y: e.clientY };
       btn.classList.add("hone-msg-btn--holding");
       holdTimer = window.setTimeout(() => {
         holdTimer = null;
         holdFired = true;
         btn.classList.remove("hone-msg-btn--holding");
-        void handleRerun(messageId, menuPosition);
+        void handleHold(messageId, menuPosition);
       }, HOLD_TO_RERUN_MS);
     });
     btn.addEventListener("pointerup", cancelHold);
@@ -288,6 +294,8 @@ export function createMessageActionInjector(
       ? customPresets.length > 0
         ? "Undo Hone refinement (hold to re-hone from current text with a chosen preset)"
         : "Undo Hone refinement (hold to re-hone from current text)"
+      : customPresets.length > 0
+      ? "Hone this message (hold to pick a preset)"
       : "Hone this message";
     buttonsForMessage(messageId).forEach((btn) => {
       btn.disabled = disabled;
@@ -328,13 +336,15 @@ export function createMessageActionInjector(
     }
   }
 
-  /** Hold-to-rerun on an already-refined message: refine the current
+  /** Hold action. On an already-refined message: refine the current
    *  content as the new base. The undo entry is overwritten backend-side,
    *  so a later click-undo returns to the version that was held, not the
-   *  pristine original. With custom output presets available, the user
-   *  first picks which one to re-hone with (a one-off override; the active
-   *  preset is unchanged). Without any, re-hone uses the active preset. */
-  async function handleRerun(messageId: string, position: { x: number; y: number }) {
+   *  pristine original. On an unrefined message: a first hone. With custom
+   *  output presets available, the user first picks which one to hone with
+   *  (a one-off override; the active preset is unchanged). Without any,
+   *  the active preset is used (the hold only starts on refined messages
+   *  in that case). */
+  async function handleHold(messageId: string, position: { x: number; y: number }) {
     if (!isReady()) return;
     if (!getActiveChatId()) return;
     if (busyIds.has(messageId)) return;
