@@ -93,6 +93,10 @@ export interface MessageActionInjector {
   /** Optimistic busy on click; reconciled by refine-started /
    *  refine-complete. */
   setBusy(messageId: string, busy: boolean): void;
+  /** Replace the busy set with the backend's authoritative in-flight list
+   *  (state resync). Clears spinners whose `refine-complete` was missed. */
+  reconcileBusy(messageIds: Iterable<string>): void;
+  hasBusy(): boolean;
   /** Mirror of the backend `presets` push; feeds the re-hone menu. */
   setPresets(presets: PresetSummary[], activeId: string): void;
   rescan(): void;
@@ -389,6 +393,17 @@ export function createMessageActionInjector(
       if (busy) busyIds.add(messageId);
       else busyIds.delete(messageId);
       updateButtonState(messageId);
+    },
+    reconcileBusy(messageIds) {
+      const next = new Set(messageIds);
+      const changed = [...busyIds, ...next].filter((id) => busyIds.has(id) !== next.has(id));
+      if (changed.length === 0) return;
+      busyIds.clear();
+      for (const id of next) busyIds.add(id);
+      changed.forEach(updateButtonState);
+    },
+    hasBusy() {
+      return busyIds.size > 0;
     },
     setPresets(presets, activeId) {
       customPresets = presets.filter((p) => !p.builtIn && p.slot === "output");

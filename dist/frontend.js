@@ -5762,6 +5762,18 @@ function createFloatWidget(ctx, sendToBackend, isReady, opts) {
         break;
       case "active-chat":
         refined = !!msg.lastMessageRefined;
+        if (msg.busyMessageIds) {
+          const nowBusy = msg.busyMessageIds.length > 0;
+          if (busy && !nowBusy) {
+            pendingAction = null;
+            awaitingDiffClose = false;
+            if (armed === "cancel") {
+              armed = null;
+              clearArmedTimer();
+            }
+          }
+          busy = nowBusy;
+        }
         if (armed === "refine" && refined || armed === "undo" && !refined) {
           armed = null;
           clearArmedTimer();
@@ -5786,6 +5798,7 @@ function createFloatWidget(ctx, sendToBackend, isReady, opts) {
   }
   return {
     handleBackendMessage,
+    isBusy: () => busy || generating,
     setReady,
     setConfirmRequired,
     setErrorShowing,
@@ -6167,6 +6180,19 @@ function createMessageActionInjector(ctx, sendToBackend, getActiveChatId, isRead
         busyIds.delete(messageId);
       updateButtonState(messageId);
     },
+    reconcileBusy(messageIds) {
+      const next = new Set(messageIds);
+      const changed = [...busyIds, ...next].filter((id) => busyIds.has(id) !== next.has(id));
+      if (changed.length === 0)
+        return;
+      busyIds.clear();
+      for (const id of next)
+        busyIds.add(id);
+      changed.forEach(updateButtonState);
+    },
+    hasBusy() {
+      return busyIds.size > 0;
+    },
     setPresets(presets, activeId) {
       customPresets = presets.filter((p) => !p.builtIn && p.slot === "output");
       activePresetId = activeId;
@@ -6506,6 +6532,8 @@ function playNotificationSound(customUrl) {
   }
 }
 var READY_RETRY_INTERVAL_MS = 3000;
+var BUSY_RESYNC_INTERVAL_MS = 15000;
+var FOREGROUND_RESYNC_DELAY_MS = 3000;
 function setup(ctx) {
   const cleanups = [];
   const removeStyle = ctx.dom.addStyle(STYLES);
@@ -6598,6 +6626,8 @@ function setup(ctx) {
           floatWidget?.setReady(true);
         }
         messageInjector?.setRefinedMessages(msg.refinedMessageIds);
+        if (msg.busyMessageIds)
+          messageInjector?.reconcileBusy(msg.busyMessageIds);
         if (activeChatId) {
           messageInjector?.rescan();
           inputAreaInjector?.rescan();
@@ -6736,6 +6766,38 @@ function setup(ctx) {
     sendInitialHandshake();
   }, READY_RETRY_INTERVAL_MS);
   cleanups.push(() => window.clearInterval(retryTimer));
+  const requestResync = () => {
+    if (!ready || document.visibilityState !== "visible")
+      return;
+    sendToBackend({ type: "get-active-chat" });
+  };
+  let foregroundResyncTimer = null;
+  const onForeground = () => {
+    if (document.visibilityState !== "visible")
+      return;
+    requestResync();
+    if (foregroundResyncTimer !== null)
+      window.clearTimeout(foregroundResyncTimer);
+    foregroundResyncTimer = window.setTimeout(() => {
+      foregroundResyncTimer = null;
+      requestResync();
+    }, FOREGROUND_RESYNC_DELAY_MS);
+  };
+  document.addEventListener("visibilitychange", onForeground);
+  window.addEventListener("pageshow", onForeground);
+  window.addEventListener("online", onForeground);
+  const busyResyncTimer = window.setInterval(() => {
+    if (messageInjector?.hasBusy() || floatWidget?.isBusy())
+      requestResync();
+  }, BUSY_RESYNC_INTERVAL_MS);
+  cleanups.push(() => {
+    document.removeEventListener("visibilitychange", onForeground);
+    window.removeEventListener("pageshow", onForeground);
+    window.removeEventListener("online", onForeground);
+    if (foregroundResyncTimer !== null)
+      window.clearTimeout(foregroundResyncTimer);
+    window.clearInterval(busyResyncTimer);
+  });
   const settingsUnsub = ctx.events.on("SETTINGS_UPDATED", (payload) => {
     const p = payload;
     if (!p || typeof p !== "object")

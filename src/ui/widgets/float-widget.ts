@@ -781,6 +781,21 @@ export function createFloatWidget(
 
       case "active-chat":
         refined = !!msg.lastMessageRefined;
+        // Resync reply: the backend's in-flight list is authoritative, so
+        // recover from a `refine-complete` / `refine-started` lost while
+        // the tab was hidden and its socket was suspended.
+        if (msg.busyMessageIds) {
+          const nowBusy = msg.busyMessageIds.length > 0;
+          if (busy && !nowBusy) {
+            pendingAction = null;
+            awaitingDiffClose = false;
+            if (armed === "cancel") {
+              armed = null;
+              clearArmedTimer();
+            }
+          }
+          busy = nowBusy;
+        }
         if (
           (armed === "refine" && refined) ||
           (armed === "undo" && !refined)
@@ -810,6 +825,8 @@ export function createFloatWidget(
 
   return {
     handleBackendMessage,
+    /** True while the widget shows a refine or main-chat generation. */
+    isBusy: () => busy || generating,
     setReady,
     setConfirmRequired,
     setErrorShowing,

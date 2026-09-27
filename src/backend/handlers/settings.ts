@@ -4,7 +4,9 @@ import type { HandlerMap } from "../dispatch";
 import { getSettings, updateSettings } from "../../storage/settings";
 import { getStats } from "../../storage/stats";
 import { getActiveChatIdFor, snapshotLastAiState } from "../chat-state";
+import { isGeneratingFor } from "../events";
 import { hasPermission } from "../permissions";
+import { listPendingMessageIds } from "../../generation/pending";
 import * as hlog from "../../hlog";
 
 export const settingsHandlers: HandlerMap = {
@@ -88,6 +90,10 @@ export const settingsHandlers: HandlerMap = {
     hlog.debug(ctx.userId, `ipc get-active-chat: fetching`);
     const chatId = await getActiveChatIdFor(ctx.userId);
     hlog.debug(ctx.userId, `ipc get-active-chat: active chat = ${chatId || "none"}`);
+    // get-active-chat doubles as the frontend's state resync (e.g. after
+    // the tab was hidden and its socket missed events), so also re-send
+    // the generation flag and the in-flight refines.
+    ctx.send({ type: "generation-state", generating: isGeneratingFor(ctx.userId) });
     if (!chatId) {
       ctx.send({
         type: "active-chat",
@@ -95,10 +101,13 @@ export const settingsHandlers: HandlerMap = {
         lastMessageRefined: false,
         lastAiMessageId: null,
         refinedMessageIds: [],
+        busyMessageIds: [],
       });
       return;
     }
     const snap = await snapshotLastAiState(ctx.userId, chatId);
+    const busyMessageIds = listPendingMessageIds(ctx.userId, chatId);
+    hlog.debug(ctx.userId, `ipc get-active-chat: ${busyMessageIds.length} refine(s) in flight`);
     ctx.send({
       type: "active-chat",
       chatId,
@@ -106,6 +115,7 @@ export const settingsHandlers: HandlerMap = {
       lastAiMessageId: snap.messageId,
       lastAiStages: snap.stages,
       refinedMessageIds: snap.refinedMessageIds,
+      busyMessageIds,
     });
   },
 };

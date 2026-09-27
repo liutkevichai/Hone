@@ -12,6 +12,7 @@ import { assembleStage, type AssembleContext } from "../assemble";
 import { enqueueChatOperation } from "../mutation/queue";
 import * as cancelRegistry from "../generation/cancel";
 import { ABORTED_ERROR_MARKER, isAbortError } from "../generation/cancel";
+import { markPending } from "../generation/pending";
 import { resolveModel } from "./model-resolver";
 import { runStrategy } from "./strategy";
 import { buildContext, buildShieldPreservationNote, fetchLoreBlock, findLastAssistantMessage, DEFAULT_MESSAGE_CONTEXT_TOKENS } from "./context";
@@ -63,38 +64,45 @@ export async function refineSingle(
 
   hlog.debug(userId, `refineSingle: enqueued ${messageId.slice(0, 8)} in ${chatId.slice(0, 8)}`);
 
-  await enqueueChatOperation(`${userId}:${chatId}`, async () => {
-    hlog.debug(userId, `refineSingle: queue slot started ${messageId.slice(0, 8)}`);
-    const settings = await getSettings(userId);
+  // Tracked from enqueue (not only from slot start) so a frontend state
+  // resync also sees queued refines; see generation/pending.ts.
+  const releasePending = markPending(userId, chatId, messageId);
+  try {
+    await enqueueChatOperation(`${userId}:${chatId}`, async () => {
+      hlog.debug(userId, `refineSingle: queue slot started ${messageId.slice(0, 8)}`);
+      const settings = await getSettings(userId);
 
-    if (!settings.enabled) {
-      hlog.debug(userId, `refineSingle: skipped ${messageId.slice(0, 8)}: settings.enabled=false`);
-      return;
-    }
+      if (!settings.enabled) {
+        hlog.debug(userId, `refineSingle: skipped ${messageId.slice(0, 8)}: settings.enabled=false`);
+        return;
+      }
 
-    if (options.externalSignal?.aborted) {
-      hlog.debug(userId, `refineSingle: pre-start abort ${messageId.slice(0, 8)}: external signal already fired`);
-      return;
-    }
+      if (options.externalSignal?.aborted) {
+        hlog.debug(userId, `refineSingle: pre-start abort ${messageId.slice(0, 8)}: external signal already fired`);
+        return;
+      }
 
-    const refineCancelKey = cancelRegistry.refineKey(userId, chatId, messageId);
-    const ownController = cancelRegistry.register(refineCancelKey);
-    const signal = composeSignals(options.externalSignal, ownController.signal)!;
+      const refineCancelKey = cancelRegistry.refineKey(userId, chatId, messageId);
+      const ownController = cancelRegistry.register(refineCancelKey);
+      const signal = composeSignals(options.externalSignal, ownController.signal)!;
 
-    try {
-      success = await runRefineSingleBody({
-        chatId,
-        messageId,
-        userId,
-        send,
-        settings,
-        signal,
-        presetOverrideId: options.presetId,
-      });
-    } finally {
-      cancelRegistry.release(refineCancelKey, ownController);
-    }
-  });
+      try {
+        success = await runRefineSingleBody({
+          chatId,
+          messageId,
+          userId,
+          send,
+          settings,
+          signal,
+          presetOverrideId: options.presetId,
+        });
+      } finally {
+        cancelRegistry.release(refineCancelKey, ownController);
+      }
+    });
+  } finally {
+    releasePending();
+  }
 
   return success;
 }
@@ -355,6 +363,8 @@ async function runRefineSingleBody(args: RefineSingleBodyInput): Promise<boolean
 
 export async function undoRefine(chatId: string, messageId: string, userId: string, send: SendFn): Promise<void> {
   hlog.debug(userId, `undoRefine: enqueued ${messageId.slice(0, 8)}`);
+  // The frontend shows a spinner for undos too; track them for resync.
+  const releasePending = markPending(userId, chatId, messageId);
   return enqueueChatOperation(`${userId}:${chatId}`, async () => {
     hlog.debug(userId, `undoRefine: queue slot started ${messageId.slice(0, 8)}`);
     try {
@@ -399,7 +409,7 @@ export async function undoRefine(chatId: string, messageId: string, userId: stri
       spindle.log.warn(`[Hone] Undo failed for ${messageId}: ${error}`);
       send({ type: "refine-error", messageId, error: `Undo failed: ${error}` });
     }
-  });
+  }).finally(releasePending);
 }
 
 export async function refineBulk(

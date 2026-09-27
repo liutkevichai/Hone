@@ -31,9 +31,12 @@ function removeActiveGeneration(userId: string, id: string): void {
   if (set.size === 0) activeGenerationsByUser.delete(userId);
 }
 
+export function isGeneratingFor(userId: string): boolean {
+  return (activeGenerationsByUser.get(userId)?.size ?? 0) > 0;
+}
+
 function publishGeneratingFor(userId: string, sendTo: (m: BackendToFrontend, u: string) => void): void {
-  const generating = (activeGenerationsByUser.get(userId)?.size ?? 0) > 0;
-  sendTo({ type: "generation-state", generating }, userId);
+  sendTo({ type: "generation-state", generating: isGeneratingFor(userId) }, userId);
 }
 
 async function handleSwipeDeletion(
