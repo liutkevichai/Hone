@@ -248,7 +248,7 @@ export function setup(ctx: SpindleFrontendContext) {
           // then revert. `.finally()` runs once the modal closes,
           // however it's closed.
           floatWidget?.setErrorShowing(true);
-          showErrorModal(ctx, msg.error, msg.raw)
+          showErrorModal(msg.error, msg.raw)
             .catch(() => {})
             .finally(() => floatWidget?.setErrorShowing(false));
         }

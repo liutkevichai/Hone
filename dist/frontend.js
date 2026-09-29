@@ -1756,71 +1756,189 @@ var STYLES = `
 }
 
 /* ── Error modal ──────────────────────────────────────── */
+/* Mirrors Lumiverse's ConfirmationModal (danger variant) so the error
+ * dialog tracks the active theme exactly like the host's own confirm. */
 
+.hone-error-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10003;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--lumiverse-modal-backdrop, rgba(0, 0, 0, 0.5));
+  backdrop-filter: blur(4px);
+}
 .hone-error-modal {
+  --hone-error-accent: var(--lumiverse-danger, #ef4444);
+  --hone-error-accent-border: color-mix(in srgb, var(--hone-error-accent) 28%, var(--lumiverse-border, rgba(255, 255, 255, 0.08)));
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--lumiverse-radius-xl, 16px);
+  background:
+    radial-gradient(
+      120% 120% at 50% 0%,
+      color-mix(in srgb, var(--hone-error-accent) 10%, transparent) 0%,
+      transparent 58%
+    ),
+    var(--lumiverse-gradient-modal, var(--lumiverse-bg));
+  border: 1px solid var(--hone-error-accent-border);
+  box-shadow:
+    var(--lumiverse-shadow-xl, 0 20px 60px rgba(0, 0, 0, 0.5)),
+    0 18px 48px color-mix(in srgb, var(--hone-error-accent) 14%, transparent);
+  font-family: var(--lumiverse-font-family, inherit);
+}
+.hone-error-modal--wide {
+  max-width: 640px;
+}
+.hone-error-modal__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--lumiverse-fill-subtle, rgba(0, 0, 0, 0.1));
+  border: 1px solid var(--lumiverse-border);
+  border-radius: var(--lumiverse-radius, 8px);
+  color: var(--lumiverse-text-dim);
+  cursor: pointer;
+  transition:
+    background var(--lumiverse-transition-fast),
+    border-color var(--lumiverse-transition-fast),
+    color var(--lumiverse-transition-fast);
+}
+.hone-error-modal__close:hover {
+  background: color-mix(in srgb, var(--hone-error-accent) 14%, var(--lumiverse-fill-subtle, rgba(0, 0, 0, 0.1)));
+  border-color: var(--hone-error-accent-border);
+  color: var(--lumiverse-text);
+}
+.hone-error-modal__content {
+  padding: 28px 24px 24px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.hone-error-modal__icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 4px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--lumiverse-radius-lg, 12px) + 2px);
+  background: color-mix(in srgb, var(--hone-error-accent) 14%, var(--lumiverse-fill-subtle, rgba(0, 0, 0, 0.1)));
+  border: 1px solid var(--hone-error-accent-border);
+  color: var(--hone-error-accent);
+  box-shadow: var(--lumiverse-highlight-inset, inset 0 1px 0 rgba(255, 255, 255, 0.1));
+}
+.hone-error-modal__title {
+  margin: 0;
+  font-size: calc(18px * var(--lumiverse-font-scale, 1));
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--lumiverse-text);
+  text-align: center;
 }
 .hone-error-modal__message {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--lumiverse-text);
+  font-size: calc(14px * var(--lumiverse-font-scale, 1));
+  line-height: 1.6;
+  color: var(--lumiverse-text-muted);
+  text-align: center;
   white-space: pre-wrap;
   word-break: break-word;
-}
-.hone-error-modal__actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.hone-error-modal__toolbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
 }
 .hone-error-modal__raw {
   margin: 0;
-  padding: 10px;
+  padding: 12px;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  text-align: left;
+  font-family: var(--lumiverse-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: calc(12px * var(--lumiverse-font-scale, 1));
   line-height: 1.45;
   color: var(--lumiverse-text);
-  background: var(--lumiverse-fill-subtle, rgba(128, 128, 128, 0.1));
-  border: 1px solid var(--lumiverse-border, rgba(128, 128, 128, 0.25));
-  border-radius: var(--lumiverse-radius, 6px);
-  max-height: 50vh;
-  overflow: auto;
+  background: var(--lumiverse-bg-dark, rgba(0, 0, 0, 0.16));
+  border: 1px solid var(--lumiverse-border);
+  border-radius: var(--lumiverse-radius-md, 10px);
+}
+.hone-error-modal__actions {
+  display: flex;
+  gap: 12px;
+  padding: 0 24px 24px;
+  flex: 0 0 auto;
 }
 .hone-error-btn {
-  background: transparent;
-  border: 1px solid var(--lumiverse-border, rgba(128, 128, 128, 0.25));
-  color: var(--lumiverse-text, inherit);
-  border-radius: var(--lumiverse-radius, 8px);
-  padding: 10px 14px;
+  flex: 1;
+  padding: 12px 20px;
+  font-family: inherit;
+  font-size: calc(14px * var(--lumiverse-font-scale, 1));
+  font-weight: 500;
+  background: var(--lumiverse-fill-subtle, rgba(0, 0, 0, 0.1));
+  border: 1px solid var(--lumiverse-border);
+  border-radius: var(--lumiverse-radius-md, 10px);
+  color: var(--lumiverse-text);
   cursor: pointer;
-  font-size: 14px;
-  transition: background var(--lumiverse-transition-fast, 150ms);
+  box-shadow: var(--lumiverse-highlight-inset, inset 0 1px 0 rgba(255, 255, 255, 0.1));
+  transition:
+    background var(--lumiverse-transition-fast),
+    border-color var(--lumiverse-transition-fast),
+    transform var(--lumiverse-transition-fast),
+    filter var(--lumiverse-transition-fast),
+    box-shadow var(--lumiverse-transition-fast);
 }
 .hone-error-btn:hover {
-  background: var(--lumiverse-bg-hover, rgba(128, 128, 128, 0.1));
-}
-.hone-error-modal__toolbar .hone-error-btn {
-  padding: 4px 10px;
-  font-size: 13px;
+  background: color-mix(in srgb, var(--hone-error-accent) 14%, var(--lumiverse-fill-subtle, rgba(0, 0, 0, 0.1)));
+  border-color: var(--hone-error-accent-border);
 }
 .hone-error-btn--primary {
-  background: var(--lumiverse-primary, #9370db);
-  border-color: var(--lumiverse-primary, #9370db);
-  color: var(--lumiverse-text-on-primary, #fff);
   font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--hone-error-accent) 36%, transparent);
+  background: linear-gradient(
+    135deg,
+    var(--hone-error-accent) 0%,
+    color-mix(in srgb, var(--hone-error-accent) 82%, black) 100%
+  );
+  color: #fff;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--hone-error-accent) 22%, transparent);
 }
 .hone-error-btn--primary:hover {
-  background: var(--lumiverse-primary, #9370db);
-  filter: brightness(1.1);
+  background: linear-gradient(
+    135deg,
+    var(--hone-error-accent) 0%,
+    color-mix(in srgb, var(--hone-error-accent) 82%, black) 100%
+  );
+  border-color: color-mix(in srgb, var(--hone-error-accent) 36%, transparent);
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--hone-error-accent) 28%, transparent);
+}
+.hone-error-btn:focus-visible,
+.hone-error-modal__close:focus-visible {
+  outline: none;
+}
+@media (max-width: 480px) {
+  .hone-error-modal__content {
+    padding: 24px 18px 20px;
+  }
+  .hone-error-modal__actions {
+    flex-direction: column-reverse;
+    padding: 0 18px 18px;
+  }
 }
 
 /* ── Preview modal ────────────────────────────────────── */
@@ -5196,72 +5314,99 @@ function showPreviewModal(ctx, path, stageIndex, messages, diagnostics) {
 }
 
 // src/ui/widgets/error-modal.ts
-function showErrorModal(ctx, message, raw) {
-  let modal;
-  try {
-    modal = ctx.ui.showModal({ title: "Hone: Error", width: 520, maxHeight: 600 });
-  } catch {
-    return ctx.ui.showConfirm({ title: "Hone Error", message, confirmLabel: "OK", variant: "danger" }).then(() => {}, () => {});
-  }
-  const done = new Promise((resolve) => {
-    modal.onDismiss(() => resolve());
-  });
-  const button = (label, primary, onClick) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = primary ? "hone-error-btn hone-error-btn--primary" : "hone-error-btn";
-    btn.textContent = label;
-    btn.addEventListener("click", onClick);
-    return btn;
-  };
-  const renderMessage = () => {
-    modal.setTitle("Hone: Error");
-    modal.root.innerHTML = "";
-    const wrap = document.createElement("div");
-    wrap.className = "hone-error-modal";
-    const text = document.createElement("p");
-    text.className = "hone-error-modal__message";
-    text.textContent = message;
-    wrap.appendChild(text);
-    const actions = document.createElement("div");
-    actions.className = "hone-error-modal__actions";
-    actions.appendChild(button("OK", true, () => modal.dismiss()));
-    if (raw)
-      actions.appendChild(button("View response", false, renderRaw));
-    wrap.appendChild(actions);
-    modal.root.appendChild(wrap);
-  };
-  const renderRaw = () => {
-    if (!raw)
-      return;
-    modal.setTitle("Hone: Response");
-    modal.root.innerHTML = "";
-    const wrap = document.createElement("div");
-    wrap.className = "hone-error-modal";
-    const toolbar = document.createElement("div");
-    toolbar.className = "hone-error-modal__toolbar";
-    toolbar.appendChild(button("‹ Back", false, renderMessage));
-    const copyBtn = button("Copy", false, () => {
-      navigator.clipboard?.writeText(raw).then(() => {
-        copyBtn.textContent = "Copied";
-      }, () => {
-        copyBtn.textContent = "Copy failed";
-      });
+var ALERT_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+var CLOSE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+function showErrorModal(message, raw) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "hone-error-overlay";
+    const modal = document.createElement("div");
+    modal.className = "hone-error-modal";
+    modal.setAttribute("role", "alertdialog");
+    modal.setAttribute("aria-modal", "true");
+    overlay.appendChild(modal);
+    const close = () => {
+      document.removeEventListener("keydown", onKey, true);
+      overlay.remove();
+      resolve();
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close();
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay)
+        close();
     });
-    toolbar.appendChild(copyBtn);
-    wrap.appendChild(toolbar);
-    const pre = document.createElement("pre");
-    pre.className = "hone-error-modal__raw";
-    pre.textContent = raw;
-    wrap.appendChild(pre);
-    const actions = document.createElement("div");
-    actions.className = "hone-error-modal__actions";
-    actions.appendChild(button("OK", true, () => modal.dismiss()));
-    wrap.appendChild(actions);
-    modal.root.appendChild(wrap);
-  };
-  renderMessage();
-  return done;
+    const button = (label, primary, onClick) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = primary ? "hone-error-btn hone-error-btn--primary" : "hone-error-btn";
+      btn.textContent = label;
+      btn.addEventListener("click", onClick);
+      return btn;
+    };
+    const renderFrame = (title, wide) => {
+      modal.innerHTML = "";
+      modal.classList.toggle("hone-error-modal--wide", wide);
+      const closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.className = "hone-error-modal__close";
+      closeBtn.setAttribute("aria-label", "Close");
+      closeBtn.innerHTML = CLOSE_ICON;
+      closeBtn.addEventListener("click", close);
+      modal.appendChild(closeBtn);
+      const content = document.createElement("div");
+      content.className = "hone-error-modal__content";
+      const icon = document.createElement("div");
+      icon.className = "hone-error-modal__icon";
+      icon.innerHTML = ALERT_ICON;
+      content.appendChild(icon);
+      const h = document.createElement("h3");
+      h.className = "hone-error-modal__title";
+      h.textContent = title;
+      content.appendChild(h);
+      modal.appendChild(content);
+      const actions = document.createElement("div");
+      actions.className = "hone-error-modal__actions";
+      modal.appendChild(actions);
+      return { content, actions };
+    };
+    const renderMessage = () => {
+      const { content, actions } = renderFrame("Hone Error", false);
+      const text = document.createElement("div");
+      text.className = "hone-error-modal__message";
+      text.textContent = message;
+      content.appendChild(text);
+      if (raw)
+        actions.appendChild(button("View response", false, renderRaw));
+      actions.appendChild(button("OK", true, close));
+    };
+    const renderRaw = () => {
+      if (!raw)
+        return;
+      const { content, actions } = renderFrame("LLM Response", true);
+      const pre = document.createElement("pre");
+      pre.className = "hone-error-modal__raw";
+      pre.textContent = raw;
+      content.appendChild(pre);
+      actions.appendChild(button("‹ Back", false, renderMessage));
+      const copyBtn = button("Copy", false, () => {
+        navigator.clipboard?.writeText(raw).then(() => {
+          copyBtn.textContent = "Copied";
+        }, () => {
+          copyBtn.textContent = "Copy failed";
+        });
+      });
+      actions.appendChild(copyBtn);
+      actions.appendChild(button("OK", true, close));
+    };
+    renderMessage();
+    document.body.appendChild(overlay);
+  });
 }
 
 // src/ui/icons.ts
@@ -6816,7 +6961,7 @@ function setup(ctx) {
         }
         if (msg.error && !isAborted) {
           floatWidget?.setErrorShowing(true);
-          showErrorModal(ctx, msg.error, msg.raw).catch(() => {}).finally(() => floatWidget?.setErrorShowing(false));
+          showErrorModal(msg.error, msg.raw).catch(() => {}).finally(() => floatWidget?.setErrorShowing(false));
         }
         break;
       }
