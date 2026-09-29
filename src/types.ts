@@ -261,7 +261,7 @@ export type BackendToFrontend =
   | { type: "settings"; settings: HoneSettings }
   | { type: "refine-started"; messageId: string }
   | { type: "refine-complete"; messageId: string; success: boolean }
-  | { type: "refine-error"; messageId: string; error: string }
+  | { type: "refine-error"; messageId: string; error: string; raw?: string }
   | { type: "bulk-progress"; current: number; total: number; messageId: string }
   | { type: "bulk-complete"; succeeded: number; failed: number; total: number }
   | { type: "debug-logs"; formatted: string; count: number; capacity: number; enabled: boolean }
@@ -400,4 +400,8 @@ export interface GenerateResult {
   success: boolean;
   error?: string;
   aborted?: boolean;
+  /** Provider response as returned by the host (non-streaming result or
+   *  the stream's `done` chunk), or error details on failure. Surfaced
+   *  in the error modal's "View response" pane. */
+  raw?: unknown;
 }

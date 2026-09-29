@@ -17,6 +17,7 @@ import { resolveModel } from "./model-resolver";
 import { runStrategy } from "./strategy";
 import { buildContext, buildShieldPreservationNote, fetchLoreBlock, findLastAssistantMessage, DEFAULT_MESSAGE_CONTEXT_TOKENS } from "./context";
 import * as hlog from "../hlog";
+import { formatRawForError } from "./response-error";
 
 type SendFn = (msg: BackendToFrontend) => void;
 
@@ -228,7 +229,7 @@ async function runRefineSingleBody(args: RefineSingleBodyInput): Promise<boolean
         return false;
       }
       const error = err instanceof Error ? err.message : String(err);
-      send({ type: "refine-error", messageId, error });
+      send({ type: "refine-error", messageId, error, raw: formatRawForError(err) });
       return false;
     }
 
@@ -356,7 +357,7 @@ async function runRefineSingleBody(args: RefineSingleBodyInput): Promise<boolean
     }
     const error = err instanceof Error ? err.message : String(err);
     spindle.log.warn(`Refine failed for ${messageId}: ${error}`);
-    send({ type: "refine-error", messageId, error: `Refinement failed: ${error}` });
+    send({ type: "refine-error", messageId, error: `Refinement failed: ${error}`, raw: formatRawForError(err) });
     return false;
   }
 }
@@ -438,7 +439,7 @@ export async function refineBulk(
         );
         lastError = msg.error;
       }
-      send({ ...msg, error: isAbort ? ABORTED_ERROR_MARKER : "" });
+      send({ ...msg, error: isAbort ? ABORTED_ERROR_MARKER : "", raw: undefined });
       return;
     }
     send(msg);
@@ -604,7 +605,7 @@ export async function enhanceUserMessage(
     const error = err instanceof Error ? err.message : String(err);
     hlog.debug(userId, `enhanceUserMessage: threw: ${error}`);
     spindle.log.warn(`[Hone] enhance failed: ${error}`);
-    send({ type: "refine-error", messageId: "", error });
+    send({ type: "refine-error", messageId: "", error, raw: formatRawForError(err) });
   } finally {
     cancelRegistry.release(enhanceCancelKey, ownController);
   }

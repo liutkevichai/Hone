@@ -5,6 +5,7 @@ import { createSettingsPage } from "./settings-page";
 import { createDrawerTab } from "./drawer";
 import { showDiffModal } from "./widgets/diff-modal";
 import { showPreviewModal } from "./widgets/preview-modal";
+import { showErrorModal } from "./widgets/error-modal";
 import { createFloatWidget } from "./widgets/float-widget";
 import { createMessageActionInjector } from "./injectors/message-action";
 import { createInputAreaInjector } from "./injectors/input-area";
@@ -244,16 +245,10 @@ export function setup(ctx: SpindleFrontendContext) {
         }
         if (msg.error && !isAborted) {
           // Flip the widget to error-chibi for the modal's lifetime,
-          // then revert. `.finally()` runs on confirm / cancel /
-          // dismiss: exactly once.
+          // then revert. `.finally()` runs once the modal closes,
+          // however it's closed.
           floatWidget?.setErrorShowing(true);
-          ctx.ui.showConfirm({
-            title: "Hone Error",
-            message: msg.error,
-            confirmLabel: "OK",
-            cancelLabel: "Dismiss",
-            variant: "danger",
-          })
+          showErrorModal(ctx, msg.error, msg.raw)
             .catch(() => {})
             .finally(() => floatWidget?.setErrorShowing(false));
         }
