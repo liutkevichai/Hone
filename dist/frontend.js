@@ -1755,6 +1755,74 @@ var STYLES = `
   cursor: not-allowed;
 }
 
+/* ── Error modal ──────────────────────────────────────── */
+
+.hone-error-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hone-error-modal__message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--lumiverse-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.hone-error-modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hone-error-modal__toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.hone-error-modal__raw {
+  margin: 0;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--lumiverse-text);
+  background: var(--lumiverse-fill-subtle, rgba(128, 128, 128, 0.1));
+  border: 1px solid var(--lumiverse-border, rgba(128, 128, 128, 0.25));
+  border-radius: var(--lumiverse-radius, 6px);
+  max-height: 50vh;
+  overflow: auto;
+}
+.hone-error-btn {
+  background: transparent;
+  border: 1px solid var(--lumiverse-border, rgba(128, 128, 128, 0.25));
+  color: var(--lumiverse-text, inherit);
+  border-radius: var(--lumiverse-radius, 8px);
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background var(--lumiverse-transition-fast, 150ms);
+}
+.hone-error-btn:hover {
+  background: var(--lumiverse-bg-hover, rgba(128, 128, 128, 0.1));
+}
+.hone-error-modal__toolbar .hone-error-btn {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+.hone-error-btn--primary {
+  background: var(--lumiverse-primary, #9370db);
+  border-color: var(--lumiverse-primary, #9370db);
+  color: var(--lumiverse-text-on-primary, #fff);
+  font-weight: 600;
+}
+.hone-error-btn--primary:hover {
+  background: var(--lumiverse-primary, #9370db);
+  filter: brightness(1.1);
+}
+
 /* ── Preview modal ────────────────────────────────────── */
 
 .hone-preview-overlay {
@@ -5127,6 +5195,75 @@ function showPreviewModal(ctx, path, stageIndex, messages, diagnostics) {
   document.body.appendChild(overlay);
 }
 
+// src/ui/widgets/error-modal.ts
+function showErrorModal(ctx, message, raw) {
+  let modal;
+  try {
+    modal = ctx.ui.showModal({ title: "Hone: Error", width: 520, maxHeight: 600 });
+  } catch {
+    return ctx.ui.showConfirm({ title: "Hone Error", message, confirmLabel: "OK", variant: "danger" }).then(() => {}, () => {});
+  }
+  const done = new Promise((resolve) => {
+    modal.onDismiss(() => resolve());
+  });
+  const button = (label, primary, onClick) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = primary ? "hone-error-btn hone-error-btn--primary" : "hone-error-btn";
+    btn.textContent = label;
+    btn.addEventListener("click", onClick);
+    return btn;
+  };
+  const renderMessage = () => {
+    modal.setTitle("Hone: Error");
+    modal.root.innerHTML = "";
+    const wrap = document.createElement("div");
+    wrap.className = "hone-error-modal";
+    const text = document.createElement("p");
+    text.className = "hone-error-modal__message";
+    text.textContent = message;
+    wrap.appendChild(text);
+    const actions = document.createElement("div");
+    actions.className = "hone-error-modal__actions";
+    actions.appendChild(button("OK", true, () => modal.dismiss()));
+    if (raw)
+      actions.appendChild(button("View response", false, renderRaw));
+    wrap.appendChild(actions);
+    modal.root.appendChild(wrap);
+  };
+  const renderRaw = () => {
+    if (!raw)
+      return;
+    modal.setTitle("Hone: Response");
+    modal.root.innerHTML = "";
+    const wrap = document.createElement("div");
+    wrap.className = "hone-error-modal";
+    const toolbar = document.createElement("div");
+    toolbar.className = "hone-error-modal__toolbar";
+    toolbar.appendChild(button("‹ Back", false, renderMessage));
+    const copyBtn = button("Copy", false, () => {
+      navigator.clipboard?.writeText(raw).then(() => {
+        copyBtn.textContent = "Copied";
+      }, () => {
+        copyBtn.textContent = "Copy failed";
+      });
+    });
+    toolbar.appendChild(copyBtn);
+    wrap.appendChild(toolbar);
+    const pre = document.createElement("pre");
+    pre.className = "hone-error-modal__raw";
+    pre.textContent = raw;
+    wrap.appendChild(pre);
+    const actions = document.createElement("div");
+    actions.className = "hone-error-modal__actions";
+    actions.appendChild(button("OK", true, () => modal.dismiss()));
+    wrap.appendChild(actions);
+    modal.root.appendChild(wrap);
+  };
+  renderMessage();
+  return done;
+}
+
 // src/ui/icons.ts
 var REFINE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
 var UNDO_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
@@ -6679,13 +6816,7 @@ function setup(ctx) {
         }
         if (msg.error && !isAborted) {
           floatWidget?.setErrorShowing(true);
-          ctx.ui.showConfirm({
-            title: "Hone Error",
-            message: msg.error,
-            confirmLabel: "OK",
-            cancelLabel: "Dismiss",
-            variant: "danger"
-          }).catch(() => {}).finally(() => floatWidget?.setErrorShowing(false));
+          showErrorModal(ctx, msg.error, msg.raw).catch(() => {}).finally(() => floatWidget?.setErrorShowing(false));
         }
         break;
       }

@@ -5301,6 +5301,44 @@ async function createModelProfile(userId, connectionProfileId, name) {
   return profile;
 }
 
+// src/refinement/response-error.ts
+class HoneResponseError extends Error {
+  raw;
+  constructor(message, raw) {
+    super(message);
+    this.name = "HoneResponseError";
+    this.raw = raw;
+  }
+}
+var MAX_RAW_CHARS = 200000;
+function describeThrown(err, depth = 0) {
+  if (!(err instanceof Error))
+    return err;
+  const out = { name: err.name, message: err.message };
+  for (const key of Object.keys(err)) {
+    out[key] = err[key];
+  }
+  const cause = err.cause;
+  if (cause !== undefined && depth < 3)
+    out.cause = describeThrown(cause, depth + 1);
+  return out;
+}
+function formatRawForError(err) {
+  if (!(err instanceof HoneResponseError) || err.raw === undefined)
+    return;
+  let text;
+  try {
+    text = JSON.stringify(err.raw, null, 2) ?? String(err.raw);
+  } catch (e) {
+    text = `[unserializable: ${e instanceof Error ? e.message : String(e)}]`;
+  }
+  if (text.length > MAX_RAW_CHARS) {
+    text = `${text.slice(0, MAX_RAW_CHARS)}
+\u2026 [truncated ${text.length - MAX_RAW_CHARS} chars]`;
+  }
+  return text;
+}
+
 // src/generation/index.ts
 function safeStringify(value) {
   try {
@@ -5441,7 +5479,7 @@ async function generateNonStreaming(req, resolved, userId, options, settings) {
     if (isFullPayloadEnabled(userId)) {
       debug(userId, `Generation response: ${safeStringify(result)}`);
     }
-    return { content, success: true };
+    return { content, success: true, raw: result };
   } catch (err) {
     const elapsed = Date.now() - startedAt;
     if (isAbortError(err)) {
@@ -5457,7 +5495,7 @@ async function generateNonStreaming(req, resolved, userId, options, settings) {
     const message = err instanceof Error ? err.message : String(err);
     debug(userId, `generateNonStreaming: threw after ${elapsed}ms: ${message}`);
     spindle.log.warn(`Generation failed: ${message}`);
-    return { content: "", success: false, error: message };
+    return { content: "", success: false, error: message, raw: { error: describeThrown(err) } };
   } finally {
     disarm();
   }
@@ -5500,7 +5538,7 @@ async function generateStreaming(req, resolved, userId, options, settings) {
         if (isFullPayloadEnabled(userId)) {
           debug(userId, `Generation stream done: ${safeStringify(chunk)}`);
         }
-        return { content: aggregated, success: true };
+        return { content: aggregated, success: true, raw: chunk };
       }
     }
     const totalElapsed = Date.now() - startedAt;
@@ -5510,7 +5548,8 @@ async function generateStreaming(req, resolved, userId, options, settings) {
       return {
         content: "",
         success: false,
-        error: "Stream ended without a completion marker"
+        error: "Stream ended without a completion marker",
+        raw: { partialContent: aggregated, tokenChunks, reasoningChunks }
       };
     }
     debug(userId, `generateStreaming: loop exited cleanly (tokens=${tokenChunks} aggregatedLen=${aggregated.length} elapsed=${totalElapsed}ms)`);
@@ -5530,7 +5569,12 @@ async function generateStreaming(req, resolved, userId, options, settings) {
     const message = err instanceof Error ? err.message : String(err);
     debug(userId, `generateStreaming: threw after ${elapsed}ms (tokens=${tokenChunks} firstTokenSeen=${firstTokenSeen}): ${message}`);
     spindle.log.warn(`Generation failed: ${message}`);
-    return { content: "", success: false, error: message };
+    return {
+      content: "",
+      success: false,
+      error: message,
+      raw: { error: describeThrown(err), partialContent: aggregated, tokenChunks, reasoningChunks }
+    };
   } finally {
     disarmTtft();
   }
@@ -5723,7 +5767,8 @@ async function runPipeline(pipeline, input, initialLatest, proposals, emitStages
         throw makeAbortError(result.error || "ABORTED");
       }
       debug(input.userId, `runPipeline stage ${i + 1} "${stage.name}": generate failed: ${result.error || "(no error)"}`);
-      throw new Error(result.error || `Stage "${stage.name}" failed`);
+      const message = result.error || `Stage "${stage.name}" failed`;
+      throw result.raw !== undefined ? new HoneResponseError(message, { stage: stage.name, response: result.raw }) : new Error(message);
     }
     const stripCoT = stageModel.reasoning.stripCoTTags;
     const rawContent = stripCoT ? removeCoTTags(result.content) : result.content;
@@ -5733,7 +5778,11 @@ async function runPipeline(pipeline, input, initialLatest, proposals, emitStages
     const extracted = extractRefinedContent(rawContent);
     if (!extracted.ok) {
       debug(input.userId, `stage "${stage.name}": output-format failure "${extracted.reason}": ${extracted.message}`);
-      throw new Error(extracted.message);
+      throw new HoneResponseError(extracted.message, {
+        stage: stage.name,
+        reason: extracted.reason,
+        response: result.raw ?? { content: result.content }
+      });
     }
     for (const r of extracted.recoveries)
       debug(input.userId, `stage "${stage.name}": ${r}`);
@@ -5761,6 +5810,7 @@ async function runParallel(input) {
     throw makeAbortError("ABORTED");
   }
   const proposalOutputs = [];
+  const proposalFailures = [];
   const proposalRecords = [];
   for (let i = 0;i < proposalSettled.length; i++) {
     const outcome = proposalSettled[i];
@@ -5781,10 +5831,16 @@ async function runParallel(input) {
       const reason = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
       spindle.log.warn(`[Hone] parallel proposal ${i + 1} failed: ${reason}`);
       debug(input.userId, `runParallel: proposal ${i + 1} failed: ${reason}`);
+      proposalFailures.push({
+        proposal: i + 1,
+        error: reason,
+        raw: outcome.reason instanceof HoneResponseError ? outcome.reason.raw : undefined
+      });
     }
   }
-  if (proposalOutputs.length === 0)
-    throw new Error("All parallel proposals failed");
+  if (proposalOutputs.length === 0) {
+    throw new HoneResponseError("All parallel proposals failed", { proposals: proposalFailures });
+  }
   const aggregatorRun = await runPipeline(parallel.aggregator, input, input.latest, proposalOutputs, true);
   return {
     refinedText: aggregatorRun.finalText,
@@ -6043,7 +6099,7 @@ async function runRefineSingleBody(args) {
         return false;
       }
       const error = err instanceof Error ? err.message : String(err);
-      send({ type: "refine-error", messageId, error });
+      send({ type: "refine-error", messageId, error, raw: formatRawForError(err) });
       return false;
     }
     if (signal.aborted) {
@@ -6141,7 +6197,7 @@ async function runRefineSingleBody(args) {
     }
     const error = err instanceof Error ? err.message : String(err);
     spindle.log.warn(`Refine failed for ${messageId}: ${error}`);
-    send({ type: "refine-error", messageId, error: `Refinement failed: ${error}` });
+    send({ type: "refine-error", messageId, error: `Refinement failed: ${error}`, raw: formatRawForError(err) });
     return false;
   }
 }
@@ -6202,7 +6258,7 @@ async function refineBulk(chatId, messageIds, userId, send) {
         spindle.log.warn(`[Hone] bulk: per-message error for ${msg.messageId} suppressed (modal cap), original error: ${msg.error}`);
         lastError = msg.error;
       }
-      send({ ...msg, error: isAbort ? ABORTED_ERROR_MARKER : "" });
+      send({ ...msg, error: isAbort ? ABORTED_ERROR_MARKER : "", raw: undefined });
       return;
     }
     send(msg);
@@ -6316,7 +6372,7 @@ async function enhanceUserMessage(text, chatId, userId, mode, requestId, send) {
     const error = err instanceof Error ? err.message : String(err);
     debug(userId, `enhanceUserMessage: threw: ${error}`);
     spindle.log.warn(`[Hone] enhance failed: ${error}`);
-    send({ type: "refine-error", messageId: "", error });
+    send({ type: "refine-error", messageId: "", error, raw: formatRawForError(err) });
   } finally {
     release(enhanceCancelKey, ownController);
   }

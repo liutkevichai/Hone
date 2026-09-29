@@ -8,6 +8,7 @@ import { getSettings } from "../storage/settings";
 import { isAbortError } from "./cancel";
 import { hasPermission, describeMissingPermissions } from "../backend/permissions";
 import * as hlog from "../hlog";
+import { describeThrown } from "../refinement/response-error";
 
 function safeStringify(value: unknown): string {
   try {
@@ -215,7 +216,7 @@ async function generateNonStreaming(
     if (hlog.isFullPayloadEnabled(userId)) {
       hlog.debug(userId, `Generation response: ${safeStringify(result)}`);
     }
-    return { content, success: true };
+    return { content, success: true, raw: result };
   } catch (err) {
     const elapsed = Date.now() - startedAt;
     if (isAbortError(err)) {
@@ -231,7 +232,7 @@ async function generateNonStreaming(
     const message = err instanceof Error ? err.message : String(err);
     hlog.debug(userId, `generateNonStreaming: threw after ${elapsed}ms: ${message}`);
     spindle.log.warn(`Generation failed: ${message}`);
-    return { content: "", success: false, error: message };
+    return { content: "", success: false, error: message, raw: { error: describeThrown(err) } };
   } finally {
     disarm();
   }
@@ -294,7 +295,7 @@ async function generateStreaming(
         if (hlog.isFullPayloadEnabled(userId)) {
           hlog.debug(userId, `Generation stream done: ${safeStringify(chunk)}`);
         }
-        return { content: aggregated, success: true };
+        return { content: aggregated, success: true, raw: chunk };
       }
     }
     const totalElapsed = Date.now() - startedAt;
@@ -310,6 +311,7 @@ async function generateStreaming(
         content: "",
         success: false,
         error: "Stream ended without a completion marker",
+        raw: { partialContent: aggregated, tokenChunks, reasoningChunks },
       };
     }
     hlog.debug(
@@ -341,7 +343,12 @@ async function generateStreaming(
       `generateStreaming: threw after ${elapsed}ms (tokens=${tokenChunks} firstTokenSeen=${firstTokenSeen}): ${message}`
     );
     spindle.log.warn(`Generation failed: ${message}`);
-    return { content: "", success: false, error: message };
+    return {
+      content: "",
+      success: false,
+      error: message,
+      raw: { error: describeThrown(err), partialContent: aggregated, tokenChunks, reasoningChunks },
+    };
   } finally {
     disarmTtft();
   }

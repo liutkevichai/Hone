@@ -7,6 +7,7 @@ import { generate } from "../generation";
 import { makeAbortError } from "../generation/cancel";
 import { removeCoTTags, extractRefinedContent } from "../text/extract";
 import * as hlog from "../hlog";
+import { HoneResponseError } from "./response-error";
 
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
@@ -91,7 +92,10 @@ async function runPipeline(
         input.userId,
         `runPipeline stage ${i + 1} "${stage.name}": generate failed: ${result.error || "(no error)"}`
       );
-      throw new Error(result.error || `Stage "${stage.name}" failed`);
+      const message = result.error || `Stage "${stage.name}" failed`;
+      throw result.raw !== undefined
+        ? new HoneResponseError(message, { stage: stage.name, response: result.raw })
+        : new Error(message);
     }
 
     const stripCoT = stageModel.reasoning.stripCoTTags;
@@ -108,7 +112,11 @@ async function runPipeline(
         input.userId,
         `stage "${stage.name}": output-format failure "${extracted.reason}": ${extracted.message}`
       );
-      throw new Error(extracted.message);
+      throw new HoneResponseError(extracted.message, {
+        stage: stage.name,
+        reason: extracted.reason,
+        response: result.raw ?? { content: result.content },
+      });
     }
     for (const r of extracted.recoveries) hlog.debug(input.userId, `stage "${stage.name}": ${r}`);
     hlog.debug(
@@ -150,6 +158,7 @@ async function runParallel(input: RunStrategyInput): Promise<RunStrategyResult> 
   }
 
   const proposalOutputs: string[] = [];
+  const proposalFailures: Array<{ proposal: number; error: string; raw?: unknown }> = [];
   const proposalRecords: StageRecord[] = [];
   for (let i = 0; i < proposalSettled.length; i++) {
     const outcome = proposalSettled[i];
@@ -170,10 +179,17 @@ async function runParallel(input: RunStrategyInput): Promise<RunStrategyResult> 
       const reason = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
       spindle.log.warn(`[Hone] parallel proposal ${i + 1} failed: ${reason}`);
       hlog.debug(input.userId, `runParallel: proposal ${i + 1} failed: ${reason}`);
+      proposalFailures.push({
+        proposal: i + 1,
+        error: reason,
+        raw: outcome.reason instanceof HoneResponseError ? outcome.reason.raw : undefined,
+      });
     }
   }
 
-  if (proposalOutputs.length === 0) throw new Error("All parallel proposals failed");
+  if (proposalOutputs.length === 0) {
+    throw new HoneResponseError("All parallel proposals failed", { proposals: proposalFailures });
+  }
 
   const aggregatorRun = await runPipeline(parallel.aggregator, input, input.latest, proposalOutputs, true);
 
